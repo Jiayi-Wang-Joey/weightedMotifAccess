@@ -1,4 +1,5 @@
 source("~/WeightInsertModels/R/utils.R")
+source("~/WeightInsertModels/R/peakWeight.R")
 #' @description To classify fragments into nucleosome-free, mononucleosome, 
 #' etc.. according to their lengths
 #' @param atacFrag a list of data tables containing the fragments information
@@ -43,17 +44,19 @@ source("~/WeightInsertModels/R/utils.R")
 .getBins <- function(atacFrag, 
     nWidthBins = 30, 
     nGCBins = 10, 
-    genome) {
-    
-    # this runs long
-    fragDts <- lapply(atacFrag, function(dt){
+    genome,
+    BPPARAM=BiocParallel::SerialParam()) {
+    print("start binning")
+    fragDts <- BiocParallel::bplapply(atacFrag, BPPARAM=BPPARAM, \(dt){
         dt[,width:=end-start+1]
         gr <- dtToGr(dt)
         gr <- .getGCContent(gr, genome = genome)
         dt <- as.data.table(gr)
         dt
     })
-    fragDt <- rbindlist(fragDts, idcol="sample")
+    fragDt <- rbindlist(fragDts, idcol = 
+            if ("barcode" %in% colnames(fragDts[[1]])) NULL else "sample")
+    
     rm(fragDts)
     
     widthIntervals <- unique(quantile(fragDt$width, 
@@ -68,8 +71,8 @@ source("~/WeightInsertModels/R/utils.R")
     fragDt[,GCBin:=cut(gc, 
         breaks=GCIntervals, 
         include.lowest=TRUE, labels=FALSE)] 
+    print("end binning")
     fragDt
-    
 }
 
 #' moderateBinFrequencies
@@ -114,6 +117,7 @@ moderateBinFrequencies <- function (bins, samples, counts) {
     aRange,
     moderating,
     ...) {
+    print("start weighting")
     fragDt <- .getBins(atacFrag, genome = genome, 
         nWidthBins = nWidthBins, nGCBins = nGCBins)
     fragDt[, bin := .GRP, by = .(widthBin, GCBin)]
@@ -152,7 +156,13 @@ moderateBinFrequencies <- function (bins, samples, counts) {
         fragDt[,weight:=2^smooth]     
         
     }
-    return(split(fragDt, fragDt$sample))
+    print("end weighting")
+    if ("barcode" %in% colnames(fragDt)) {
+        split(fragDt, fragDt$barcode)
+    } else {
+        split(fragDt, fragDt$sample)
+    }
+    #return(split(fragDt, fragDt$sample))
 }
 
 #' .weightPeaks
@@ -168,27 +178,43 @@ moderateBinFrequencies <- function (bins, samples, counts) {
     nSample=1e4, 
     nBins=100,
     family.loess="symmetric",
-    span=0.3) {
-    if(nrow(counts) <= nSample) {
-        res <- affy::normalize.loess(counts+1L, span=span, 
-            subset=1:nrow(counts), family.loess=family.loess)
-    } else {
-        allAvg <- log2(rowMeans(counts+1L))
-        bins <- cut(allAvg,
-            breaks = seq(min(allAvg), max(allAvg), (max(allAvg)-min(allAvg))/nBins),
-            include.lowest = TRUE)
-        idx <- unlist(sapply(seq_len(length(levels(bins))), \(i) {
-            ids <- which(bins==levels(bins)[i])
-            if (length(ids) > 1)
-                sample(ids,
-                    size = min(length(ids), round(nSample/nBins)))
-            else if (length(ids)==1)
-                ids
-            else NULL
-        }))
-        res <- affy::normalize.loess(counts+1L, span=span, 
-            subset=idx, family.loess=family.loess)
+    span=0.3,
+    peakWeight) {
+    if (peakWeight=="loess") {
+        if(nrow(counts) <= nSample) {
+            res <- affy::normalize.loess(counts+1L, span=span, 
+                subset=1:nrow(counts), family.loess=family.loess)
+        } else {
+            allAvg <- log2(rowMeans(counts+1L))
+            bins <- cut(allAvg,
+                breaks = seq(min(allAvg), max(allAvg), (max(allAvg)-min(allAvg))/nBins),
+                include.lowest = TRUE)
+            idx <- unlist(sapply(seq_len(length(levels(bins))), \(i) {
+                ids <- which(bins==levels(bins)[i])
+                if (length(ids) > 1)
+                    sample(ids,
+                        size = min(length(ids), round(nSample/nBins)))
+                else if (length(ids)==1)
+                    ids
+                else NULL
+            }))
+            res <- affy::normalize.loess(counts+1L, span=span, 
+                subset=idx, family.loess=family.loess)
+        }
+    } else if (peakWeight=="binnedLoess") {
+        e <- log2(1L+cpm(calcNormFactors(DGEList(counts))))
+        offset <- binnedLoess(e)    
+        res <- 2^(e-offset)
+    } else if(peakWeight=="monotonicSmoothed") {
+        e <- log2(1L+cpm(calcNormFactors(DGEList(counts))))
+        offset <- monotonicSmoothed(e)    
+        res <- 2^(e-offset)
+    } else if (peakWeight=="smoothedBinLm") {
+        e <- log2(1L+cpm(calcNormFactors(DGEList(counts))))
+        offset <- smoothedBinLm(e)    
+        res <- 2^(e-offset)
     }
+    
     res
 }
     
@@ -211,14 +237,15 @@ moderateBinFrequencies <- function (bins, samples, counts) {
     aRange,
     nWidthBins = 30,
     nGCBins = 10,
-    peakWeight = c("none", "loess"),
+    peakWeight = c("none", "loess", "binnedLoess"),
     moderating = FALSE,
     singleCell = FALSE,
     ...
 ) {
     
     peakWeight <- match.arg(peakWeight, 
-        choices = c("none", "loess"))
+        choices = c("none", "loess", "binnedLoess", 
+            "monotonicSmoothed", "smoothedBinLm"))
     peaks <- data.table::as.data.table(peakRanges)
     peaks$peakID <- seq_len(nrow(peaks))
     
@@ -238,7 +265,7 @@ moderateBinFrequencies <- function (bins, samples, counts) {
     fragCounts <- lapply(atacFrag, function(frag) {
         types <- names(frag)[grepl("^type_", names(frag))]
         if (fragWeight) {
-            frag[,count:=weight] # remove
+            frag[,count:=weight*count] # remove
             frag[,(types) := lapply(.SD, function(x) x*weight), 
                 .SDcols = types]
         } 
@@ -269,8 +296,10 @@ moderateBinFrequencies <- function (bins, samples, counts) {
     })
     names(allCounts) <- cols
     if (peakWeight != "none") {
-        allCounts[["counts"]] <- .weightPeaks(allCounts[["counts"]])
-        allCounts[["type_1"]] <- .weightPeaks(allCounts[["type_1"]])
+        allCounts[["counts"]] <- .weightPeaks(allCounts[["counts"]], 
+            peakWeight=peakWeight)
+        allCounts[["type_1"]] <- .weightPeaks(allCounts[["type_1"]], 
+            peakWeight=peakWeight)
     }
     allCounts
 }
@@ -292,13 +321,14 @@ getCounts <- function (files,
     maxFrag = 3000,
     smooth = FALSE,
     aRange = 0,
-    peakWeight = c("none", "loess"),
+    peakWeight=c("none", "loess"),
     moderating = FALSE,
     singleCell = FALSE,
     ...) {
     
     peakWeight <- match.arg(peakWeight, 
-        choices=c("none", "loess"))  
+        choices = c("none", "loess", "binnedLoess", 
+            "monotonicSmoothed", "smoothedBinLm"))
     
     # get fragments ranges
     if (is.null(atacFrag)) atacFrag <- .importFragments(files)
@@ -347,7 +377,7 @@ getCounts <- function (files,
         cd <- cd[match(cd$barcode, colnames(asy[[1]]))]
         SummarizedExperiment(assays = asy, 
             rowRanges = ranges,
-            colData = DataFrame(cd))
+            colData = DataFrame(cd), checkDimnames=FALSE)
     } else {
         SummarizedExperiment(assays = asy, rowRanges = ranges)  
     }
