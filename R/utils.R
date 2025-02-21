@@ -33,14 +33,22 @@
 #' @return a GRanges objects with an additional metadata column gc that contains
 #' GC content
 
-.getGCContent <- function(gr, genome) {
+.getGCContent <- function(gr, genome, contentOnly=FALSE) {
     # Sanity check
+    if(is.data.table(gr) | is.data.frame(gr)){
+      gr <- makeGRangesFromDataFrame(as.data.frame(gr))
+    }
+  
     if (!class(gr) == "GRanges") {
         stop("peakRanges must be a GRanges object")
     }
     seqs <- Biostrings::getSeq(x = genome, gr)
     mcols(gr)$gc <- letterFrequency(seqs, "GC",as.prob=TRUE)[,1]
-    gr
+    if(contentOnly){
+      return(gr$gc)}
+    else{
+      return(gr)
+    }
 } 
 
 #' @description remove fragments that are too short or too long
@@ -109,6 +117,8 @@ dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end"){
     gr
 }
 
+
+# Functionality is from another project, not yet sure how it will be packaged
 #' Mapping & aggregating modalities with genomic coordinates to reference 
 #' coordinates.
 #'
@@ -134,172 +144,120 @@ dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end"){
 #' @param aggregationFun function (e.g. mean, median, sum) used to aggregate
 #' if multiple rows of the assayTable overlap a reference coordinate.
 #' @param BPPARAM BiocParallel argument either SerialParam() or MulticoreParam(workers=n)
+#' @author Emanuel Sonder
 #' @export
 .genomicRangesMapping <- function(refRanges, 
-    assayTable,
-    byCols=c("tf_uniprot_id",
-        "cell_type_id"),
-    seqNamesCol="chr",
-    startCol="start",
-    endCol="end",
-    scoreCol=NULL,
-    calledInCol=NULL,
-    aggregationFun=NULL,
-    minoverlap=1,
-    isReplicated=FALSE,
-    BPPARAM=SerialParam()){
-    # TODO: - add warning for integer overflows - data.table size
-    assayTable <- copy(assayTable)  
+                                  assayTable,
+                                  byCols=c("tf_uniprot_id",
+                                           "cell_type_id"),
+                                  seqNamesCol="chr",
+                                  startCol="start",
+                                  endCol="end",
+                                  scoreCol=NULL,
+                                  calledInCol=NULL,
+                                  aggregationFun=NULL,
+                                  minoverlap=1,
+                                  BPPARAM=SerialParam()){
+  # TODO: - add warning for integer overflows - data.table size
+  assayTable <- copy(assayTable)  
+  
+  # attribute generic names to dimensionalities
+  if(length(byCols)==2)
+  {
+    setnames(assayTable, byCols, c("col_depth", "col_width"))
+    byCols <- c("col_depth", "col_width")
+    multiTf <- TRUE
+  }
+  else
+  {
+    setnames(assayTable, byCols, c("col_width"))
+    byCols <- c("col_width")
+    multiTf <- FALSE
+  }
+  
+  # get dimensions of tables
+  nRefs <- length(refRanges)
+  nColsWidth <- length(unique(assayTable$col_width))
+  
+  # convert to integer for speed-up
+  levels <- unique(assayTable$col_width)
+  assayTable[,col_width:=as.integer(factor(assayTable$col_width, levels=levels))]
+  
+  # convert to GRanges for faster overlap finding
+  suppressWarnings(assayTable$width <- NULL)
+  suppressWarnings(assayTable$strand <- NULL)
+  assayRanges <- makeGRangesFromDataFrame(as.data.frame(assayTable),
+                                          keep.extra.columns=TRUE,
+                                          seqnames.field=seqNamesCol,
+                                          start.field=startCol,
+                                          end.field=endCol,
+                                          ignore.strand=TRUE)
+  
+  # find overlaps with ref. coordinates
+  overlapTable <- as.data.table(findOverlaps(refRanges, assayRanges,
+                                             type="any",
+                                             minoverlap=minoverlap,
+                                             ignore.strand=TRUE))
+  rm(refRanges, assayRanges)
+  
+  # retrieve tf and cell type ids
+  overlapTable <- cbind(overlapTable$queryHits, 
+                        assayTable[overlapTable$subjectHits, 
+                                   c(byCols, scoreCol, calledInCol), 
+                                   with=FALSE])
+  
+  if(multiTf)
+  {
+    setkey(overlapTable, V1, col_width)
+    if(!is.null(calledInCol)) setnames(overlapTable, calledInCol, "calledInCol")
+    if(!is.null(scoreCol)) setnames(overlapTable, scoreCol, "scoreCol")
+    overlapTable <- split(overlapTable, by=c("col_depth"))
     
-    # attribute generic names to dimensionalities
-    if(length(byCols)==2)
-    {
-        setnames(assayTable, byCols, c("col_depth", "col_width"))
-        byCols <- c("col_depth", "col_width")
-        multiTf <- TRUE
-    }
-    else
-    {
-        setnames(assayTable, byCols, c("col_width"))
-        byCols <- c("col_width")
-        multiTf <- FALSE
-    }
+    overlapTable <- BiocParallel::bplapply(overlapTable, function(table){
+      
+      if(!is.null(scoreCol) | !is.null(aggregationFun)){
+        table <- table[,.(value=aggregationFun(scoreCol)),
+                       by=c("V1", "col_width")]}
+      else{
+        table <- table[,.(value=.N),
+                       by=c("V1", "col_width")]}
+      
+      # one would need to construct a second table here for the neg labels
+      
+      # convert to sparse matrix
+      table <- sparseMatrix(i=table$V1, 
+                            j=as.integer(table$col_width), # 11.07.2024 as.integer is not needed
+                            dims=c(nRefs, nColsWidth),
+                            x=table$value)
+      colnames(table) <- levels
+      return(table)},
+      BPPARAM=BPPARAM)
     
-    # get dimensions of tables
-    nRefs <- length(refRanges)
-    nColsWidth <- length(unique(assayTable$col_width))
+  }
+  else
+  {
+    # setkeys for speed-up
+    overlapTable[,V1:=as.integer(V1)]
+    setkey(overlapTable, col_width, V1)
     
-    # convert to integer for speed-up
-    levels <- unique(assayTable$col_width)
-    assayTable[,col_width:=as.integer(factor(assayTable$col_width, levels=levels))]
+    if(!is.null(scoreCol) | !is.null(aggregationFun)){
+      setnames(overlapTable, scoreCol, "scoreCol")
+      overlapTable <- overlapTable[,.(scoreCol=aggregationFun(scoreCol)),
+                                   by=c("col_width", "V1")]}
+    else{
+      overlapTable <- overlapTable[,.(scoreCol=.N),
+                                   by=c("col_width", "V1")]}
     
-    # convert to GRanges for faster overlap finding
-    assayRanges <- makeGRangesFromDataFrame(as.data.frame(assayTable),
-        keep.extra.columns=TRUE,
-        seqnames.field=seqNamesCol,
-        start.field=startCol,
-        end.field=endCol,
-        ignore.strand=TRUE)
+    # convert to sparse matrix
+    overlapTable <- Matrix::sparseMatrix(i=overlapTable$V1, 
+                                         j=overlapTable$col_width,
+                                         dims=c(nRefs, nColsWidth),
+                                         x=overlapTable$scoreCol)
     
-    # find overlaps with ref. coordinates
-    overlapTable <- as.data.table(findOverlaps(assayRanges, refRanges,
-        type="within",
-        minoverlap=minoverlap,
-        ignore.strand=TRUE))
-    rm(refRanges, assayRanges)
-    
-    
-    # retrieve tf and cell type ids
-    overlapTable <- cbind(overlapTable$subjectHits,
-        assayTable[overlapTable$queryHits,
-            c(byCols, scoreCol, calledInCol), with=FALSE])
-    
-    if(multiTf)
-    {
-        setkey(overlapTable, V1, col_width)
-        if(!is.null(calledInCol)) setnames(overlapTable, calledInCol, "calledInCol")
-        if(!is.null(scoreCol)) setnames(overlapTable, scoreCol, "scoreCol")
-        overlapTable <- split(overlapTable, by=c("col_depth"))
-        
-        #TODO:  BPPARAM= serialParam or multiCoreParam() as function arguments
-        #TODO:  bplapply(fls[1:3], FUN, BPPARAM = MulticoreParam(), param = param)
-        # overlap with ref. coordinates
-        overlapTable <- BiocParallel::bplapply(overlapTable, function(table){
-            
-            if(is.null(aggregationFun))
-            {
-                # get number of max callers
-                #table[, n_max:=length(unique(calledInCol)), 
-                #        by=c("col_width")]
-                
-                if(isReplicated)
-                {
-                    table[,rep:=tstrsplit(calledInCol, split="-", keep=2)]
-                    table[, n_max:=length(unique(calledInCol)), 
-                        by=c("col_width", "rep")]
-                    
-                    table <- table[,.(value=.chIPlabelRule(calledInCol,
-                        data.table::first(n_max))),
-                        by=c("V1", "col_width", "rep")]
-                    table <- table[,.(value=.chIPReplicateLabelRule(value)),
-                        by=c("V1", "col_width")]
-                }
-                else{
-                    table[,n_max:=length(unique(calledInCol)), 
-                        by=c("col_width")]
-                    
-                    table <- table[,.(value=.chIPlabelRule(calledInCol,
-                        data.table::first(n_max))),
-                        by=c("V1", "col_width")]
-                }
-            }
-            else
-            {
-                table <- table[,.(value=aggregationFun(scoreCol)),
-                    by=c("V1", "col_width")]
-            }
-            
-            # one would need to construct a second table here for the neg labels
-            
-            # convert to sparse matrix
-            table <- sparseMatrix(i=table$V1, 
-                j=as.integer(table$col_width), # what if non-numeric cell-id
-                dims=c(nRefs, nColsWidth),
-                x=table$value)
-            colnames(table) <- levels
-            return(table)},
-            BPPARAM=BPPARAM)
-        
-    }
-    else
-    {
-        # setkeys for speed-up
-        overlapTable[,V1:=as.integer(V1)]
-        setkey(overlapTable, col_width, V1)
-        
-        # overlap with ref. coordinates
-        if(is.null(aggregationFun)) error("Aggregation function needs to be defined")
-        
-        # why an lapply 05.04.24
-        #overlapTable <- overlapTable[,.("scoreCol"=lapply(.SD, aggregationFun, na.rm=TRUE)),
-        #                              by=c("col_width", "V1"),
-        #                             .SDcols=scoreCol]
-        setnames(overlapTable, scoreCol, "scoreCol")
-        overlapTable <- overlapTable[,.(scoreCol=aggregationFun(scoreCol)),
-            by=c("col_width", "V1")]
-        
-        # convert to sparse matrix
-        overlapTable <- Matrix::sparseMatrix(i=overlapTable$V1, 
-            j=overlapTable$col_width,
-            dims=c(nRefs, nColsWidth),
-            x=overlapTable$scoreCol)
-        
-        colnames(overlapTable) <- levels
-    }
-    
-    return(overlapTable)
-}
-
-#' @description
-#' Sanity check to ensure the input arguments have the correct classes
-#' 
-#' @param atacFrag: a list of data.tables that contain the ranges of fragments
-#' @param peakRanges: a GRange object that contains the ranges of peaks
-#' @param motifRanges:  a GRange object that contains the ranges of motifs, 
-#' check metadata columns
-#' check seqnames to factor in datatable
-.sanityCheck <- function(atacFrag, 
-    ranges) {
-    lapply(atacFrag, function(frag) {
-        if (!is.data.table(frag)) {
-            stop("Each element in atacFrag should be a data.table")
-        }
-    })
-    
-    if (!class(ranges)=="GRanges") {
-        stop("ranges should be a GRanges object")
-    }
-    
-    
+    colnames(overlapTable) <- levels
+  }
+  
+  gc()
+  return(overlapTable)
 }
 
