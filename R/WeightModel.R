@@ -1,5 +1,5 @@
 source("~/WeightInsertModels/R/utils.R")
-source("~/WeightInsertModels/R/peakWeight.R")
+#source("~/WeightInsertModels/R/peakWeight.R")
 #' @description To classify fragments into nucleosome-free, mononucleosome, 
 #' etc.. according to their lengths
 #' @param atacFrag a list of data tables containing the fragments information
@@ -179,7 +179,7 @@ moderateBinFrequencies <- function (bins, samples, counts) {
     nBins=100,
     family.loess="symmetric",
     span=0.3,
-    peakWeight) {
+    peakWeight="loess") {
     if (peakWeight=="loess") {
         if(nrow(counts) <= nSample) {
             res <- affy::normalize.loess(counts+1L, span=span, 

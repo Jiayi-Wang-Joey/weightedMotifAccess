@@ -1,21 +1,76 @@
-source("utils.R")
-source("WeightModel.R")
+source("~/WeightInsertModels/R/utils.R")
+source("~/WeightInsertModels/R/WeightModel.R")
+library(Rsamtools)
 
-importFrags <- function(samplePath,
-    chrSelect=NULL,
-    maxFragSize=2000,
-    verbose=TRUE){
-    if(!is.null(chrSelect) & file.exists(paste0(samplePath, ".tbi"))){
-        fragDt <- .importTabix(samplePath=samplePath, chrSelect=chrSelect)
+# importFrags <- function(samplePath,
+#     chrSelect=NULL,
+#     maxFragSize=2000,
+#     verbose=TRUE){
+#     print("chrSeletc")
+#     if(!is.null(chrSelect) & file.exists(paste0(samplePath, ".tbi"))){
+#         fragDt <- .importTabix(samplePath=samplePath, chrSelect=chrSelect)
+#     }
+#     else{
+#         fragDt <- fread(samplePath)
+#         setnames(fragDt, colnames(fragDt)[1:3],
+#             c("seqnames", "start", "end"))
+#         if(!is.null(chrSelect)) fragDt <- subset(fragDt, seqnames %in% chrSelect)
+#     }
+#     fragDt[,width:=end-start+1]
+#     fragDt <- subset(fragDt, width<maxFragSize)
+#     return(fragDt)
+# }
+# 
+
+importFrags <- function(samplePath, chrSelect = NULL, maxFragSize = 2000, verbose = TRUE) {
+    #print(chrSelect)
+    if (grepl("\\.bam$", samplePath)) {
+        if (verbose) message("Reading BAM file: ", samplePath)
+
+        # Open BAM file
+        bamFile <- BamFile(samplePath, yieldSize = 1000000)  # Load in chunks to optimize performance
+        param <- Rsamtools::ScanBamParam(what=c('pos', 'qwidth', 'isize'))
+        readPairs <- GenomicAlignments::readGAlignmentPairs(samplePath,
+                param=param)
+        frags <- GRanges(seqnames(GenomicAlignments::first(readPairs)),
+            IRanges(start=pmin(
+                GenomicAlignments::start(GenomicAlignments::first(readPairs)),
+                GenomicAlignments::start(GenomicAlignments::second(readPairs))),
+                end=pmax(
+                    GenomicAlignments::end(GenomicAlignments::first(readPairs)),
+                    GenomicAlignments::end(GenomicAlignments::second(readPairs)))))
+        frags <- granges(frags, use.mcols=TRUE)
+        start(frags) <- ifelse(strand(frags) == "+",
+            start(frags) + 4, start(frags))
+        end(frags) <- ifelse(strand(frags) == "-",
+            end(frags) - 5, end(frags))
+        fragDt <- as.data.table(frags)[,.(seqnames, start, end)]
+
+    } else {
+        if (verbose) message("Reading text file: ", samplePath)
+        if(!is.null(chrSelect) & file.exists(paste0(samplePath, ".tbi"))){
+            fragDt <- .importTabix(samplePath=samplePath, chrSelect=chrSelect)
+        } else {
+            fragDt <- fread(samplePath)
+            setnames(fragDt, colnames(fragDt)[1:3], c("seqnames", "start", "end"))
+        }
     }
-    else{
-        fragDt <- fread(samplePath)
-        setnames(fragDt, colnames(fragDt)[1:3],
-            c("seqnames", "start", "end"))
-        if(!is.null(chrSelect)) fragDt <- subset(fragDt, seqnames %in% chrSelect)
+
+    fragDt[, seqnames := ifelse(grepl("^chr", seqnames),
+        seqnames, paste0("chr", seqnames))]
+
+    fragDt[, seqnames := as.factor(seqnames)]
+
+
+    # Filter chromosomes if needed
+    if (!is.null(chrSelect)) {
+        fragDt <- fragDt[seqnames %in% chrSelect]
     }
-    fragDt[,width:=end-start+1]
-    fragDt <- subset(fragDt, width<maxFragSize)
+
+    # Calculate fragment width and filter by max size
+    fragDt[, width := end - start + 1]
+    fragDt <- fragDt[width < maxFragSize]
+
     return(fragDt)
 }
 
@@ -35,9 +90,10 @@ importFrags <- function(samplePath,
 getAverageIntervals <- \(samplePaths, genome, 
     nWidthBins=30, nGCBins=10,
     BPPARAM=BiocParallel::MulticoreParam(workers = 4),
+    #BPPARAM = BiocParallel::bpparam(), 
     chunks = TRUE,
     chromosomes = paste0("chr", c(1:22, "X", "Y")),
-    extend=FALSE) {
+    extend=TRUE) {
     
     res <- BiocParallel::bplapply(samplePaths, BPPARAM=BPPARAM, \(path) {
         if (chunks) {
@@ -111,6 +167,7 @@ getAverageIntervals <- \(samplePaths, genome,
 getAverageBinFreq <- \(samplePaths, genome, 
     intervals, chunk = FALSE,
     BPPARAM = BiocParallel::MulticoreParam(workers = 4),
+    #BPPARAM = BiocParallel::bpparam(),
     chromosomes = paste0("chr", c(1:22, "X", "Y"))) {
     
     freq <- BiocParallel::bplapply(samplePaths, BPPARAM = BPPARAM, \(path) {
@@ -194,10 +251,13 @@ getAverageBinFreq <- \(samplePaths, genome,
 
 getWeightCounts <- function(samplePaths, # named list
     frequencies,
-    regions,
+    regions, # peak?
     genome,
+    BPPARAM=BiocParallel::MulticoreParam(workers = 4),
+    #BPPARAM = BiocParallel::bpparam(),
     chromosomes = paste0("chr", c(1:22, "X", "Y")),
-    chunk=TRUE){
+    chunk=TRUE,
+    peakWeight="none") {
     
     res <- BiocParallel::bpmapply(function(path, sampleName, frequencies, 
         regions, genome, 
@@ -244,9 +304,22 @@ getWeightCounts <- function(samplePaths, # named list
             chromosomes=chromosomes), 
         BPPARAM=BPPARAM)
     res <- Reduce("cbind", res[-1], res[[1]])
+    if (peakWeight!="none") res <- .weightPeaks(res, peakWeight = peakWeight) 
+    return(SummarizedExperiment(assays = list(counts=res), 
+        rowRanges = regions))
     
-    return(res)
 }
 
-
-
+# samples <- list.files("/mnt/plger/plger/DTFAB/fullFrags/BANP/seq_files/",
+#     full.names = TRUE)
+# names(samples) <- basename(samples)
+# samples <- as.list(samples)
+# intervals <- getAverageIntervals(samplePaths,
+#     genome=BSgenome.Mmusculus.UCSC.mm10)
+# frequencies <- getAverageBinFreq(samples,
+#     genome = BSgenome.Hsapiens.UCSC.hg38, intervals)
+# regions <-  import.bed(list.files(paste0("/mnt/plger/plger/DTFAB/fullFrags/GATA1/peaks"),
+#     full.names = TRUE))
+# 
+# count <- getWeightCounts(samples, frequencies=frequencies, regions = regions,
+#     genome=BSgenome.Hsapiens.UCSC.hg38, chunk = TRUE)
