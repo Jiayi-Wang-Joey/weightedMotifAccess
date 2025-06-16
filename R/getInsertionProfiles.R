@@ -107,7 +107,6 @@
 getInsertionProfiles <- function(atacData,
                                  peakRanges,
                                  motifRanges=NULL,
-                                 species=c("Hsapiens","Mmusculus"),
                                  genome=BSgenome.Hsapiens.UCSC.hg38,
                                  margin=200,
                                  shift=FALSE,
@@ -127,13 +126,14 @@ getInsertionProfiles <- function(atacData,
     # TODO: species can also be inferred from the genome provided
     seqStyle <- seqlevelsStyle(peakRanges)
     seqlevelsStyle(peakRanges) <- "NCBI" # TODO: refactor
+    species <- genome@metadata$organism
     motifRanges <- getpmoi(genome,
                            peakRanges,
                            spec=species, ...)
+    
     seqlevelsStyle(motifRanges) <- seqStyle
     seqlevelsStyle(peakRanges) <- seqStyle
   }
-
 
   scoreCol <- weightCol
   insertFeatName <- "inserts"

@@ -86,7 +86,7 @@
 #' Convert a data table to GenomicRange object
 #' @author Emanuel Sonder
 dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
-                    strandCol="strand", stranded=FALSE, addMetaCols=FALSE){
+                    strandCol="strand", stranded=FALSE, addMetaCols=TRUE){
   dt <- copy(dt)
   setnames(dt, seqCol, "seqnames", skip_absent = TRUE)
   
@@ -303,7 +303,7 @@ getNonRedundantMotifs <- function(format=c("PFMatrix","universal","PWMatrix"),
 #' @examples
 getpmoi <- function(genome,
                     peaks,
-                    spec=c("Hsapiens","Mmusculus"), minHits=50L,
+                    spec=c("Homo sapiens", "Mus musculus"), minHits=50L,
                     seqStyle=c("ensembl", "NCBI","UCSC"), keepTop=NULL,
                     srcFolder, motifs=NULL, thresh=NULL){
   seqStyle <- match.arg(seqStyle)
@@ -319,6 +319,11 @@ getpmoi <- function(genome,
 
   # Get the motifs in universal format required by memes
   if(is.null(motifs)){
+    if(spec=="Homo sapiens"){
+      spec <- "Hsapiens"}
+    else if(spec=="Mus musculus"){
+      spec <- "Mmusculus"}
+    
     motifs <- getNonRedundantMotifs("universal", species = spec)
   }
 

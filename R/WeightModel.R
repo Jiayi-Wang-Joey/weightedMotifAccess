@@ -1,4 +1,4 @@
-source("~/WeightInsertModels/R/utils.R")
+#source("~/WeightInsertModels/R/utils.R")
 #source("~/WeightInsertModels/R/peakWeight.R")
 #' @description To classify fragments into nucleosome-free, mononucleosome, 
 #' etc.. according to their lengths
@@ -48,14 +48,18 @@ source("~/WeightInsertModels/R/utils.R")
     BPPARAM=BiocParallel::SerialParam()) {
     print("start binning")
     fragDts <- BiocParallel::bplapply(atacFrag, BPPARAM=BPPARAM, \(dt){
-        dt[,width:=end-start+1]
         gr <- dtToGr(dt)
         gr <- .getGCContent(gr, genome = genome)
         dt <- as.data.table(gr)
         dt
     })
-    fragDt <- rbindlist(fragDts, idcol = 
-            if ("barcode" %in% colnames(fragDts[[1]])) NULL else "sample")
+
+    if(any(c("barcode", "sample") %in% colnames(fragDts[[1]]))){
+      idCol <- NULL
+    }else{
+      idCol <- "sample"
+    }
+    fragDt <- rbindlist(fragDts, idcol=idCol)
     
     rm(fragDts)
     
@@ -240,6 +244,9 @@ moderateBinFrequencies <- function (bins, samples, counts) {
     peakWeight = c("none", "loess", "binnedLoess"),
     moderating = FALSE,
     singleCell = FALSE,
+    insertWeight=FALSE,
+    motifRanges = NULL,
+    profiles = NULL,
     ...
 ) {
     
@@ -260,8 +267,15 @@ moderateBinFrequencies <- function (bins, samples, counts) {
             singleCell = singleCell)
     }
     
-    atacFrag <- .getType(atacFrag, cuts = cuts)
+    if(insertWeight){
+      insSe <- getInsertionProfiles(atacFrag, peakRanges,
+                                    motifRanges=motifRanges,
+                                    weightCol="weight",
+                                    genome=genome, profiles=profiles,
+                                    simplified=TRUE, ...)
+    }
     
+    atacFrag <- .getType(atacFrag, cuts = cuts)
     fragCounts <- lapply(atacFrag, function(frag) {
         types <- names(frag)[grepl("^type_", names(frag))]
         if (fragWeight) {
@@ -304,7 +318,8 @@ moderateBinFrequencies <- function (bins, samples, counts) {
     allCounts
 }
 
-    
+
+#'@param ... Passed to `getInsertionProfiles`  
 getCounts <- function (files,
     atacFrag,
     ranges, # motif matches or peaks, set a parameter to define
@@ -322,8 +337,11 @@ getCounts <- function (files,
     smooth = FALSE,
     aRange = 0,
     peakWeight=c("none", "loess"),
+    insertWeight=FALSE,
     moderating = FALSE,
     singleCell = FALSE,
+    motifRanges = NULL,
+    profiles = NULL,
     ...) {
     
     peakWeight <- match.arg(peakWeight, 
@@ -367,7 +385,11 @@ getCounts <- function (files,
             nGCBins = nGCBins,
             peakWeight = peakWeight,
             moderating = moderating,
-            singleCell = singleCell)
+            singleCell = singleCell, 
+            insertWeight=insertWeight,
+            motifRanges=motifRanges,
+            profiles=profiles, 
+            ...)
 
     if (singleCell) {
         cd <- rbindlist(lapply(names(atacFrag), \(x) 
