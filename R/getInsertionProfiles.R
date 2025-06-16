@@ -83,7 +83,8 @@
 #' @param shift If Tn5 insertion bias should be considered (only if strand column is provided).
 #' @param calcProfile If insertion footprint profiles should be computed.
 #' @param profiles Pre-computed insertion footprint profile to compute weighted insertion counts in case `calcProfile=FALSE`.
-#' Needs to contain coordinate (chr/seqnames, start, end) columns and weight column (termed "w").
+#' Needs to contain coordinate (chr/seqnames, start, end) columns and weight column (termed "w"). 
+#' If provided for several motifs, should be a list of profiles with names corresponding to motifs.
 #' @param symmetric If transcription factor footprint profiles should be symmetric around the motif matches. Only used if `calcProfile=TRUE`.
 #' @param stranded If insertion footprint profiles should be computed taking strandedness of fragments into account.
 #' @param subSample If fragments should be sub-sampled for speed-up.
@@ -274,6 +275,8 @@ getInsertionProfiles <- function(atacData,
   }
   else{
     atacProfiles <- profiles
+    if(is.list(atacProfiles)){
+      atacProfiles <- rbindlist(atacProfiles, idcol="motif_id")}
   }
 
   # TODO: still needed?
@@ -302,6 +305,7 @@ getInsertionProfiles <- function(atacData,
                            profiles[,c("rel_pos", "motif_id", "w"),with=FALSE],
                            by.x=c("motif_id","rel_pos"),
                            by.y=c("motif_id","rel_pos"), all.x=TRUE, all.y=FALSE)
+      atacInserts[,w:=fifelse(is.na(w),1,w)]
       atacInserts[,score:=w*pos_count]
       atacInserts[,dev:=(pos_count/sum(pos_count)-w)^2/(w),
                   by=.(motif_match_id, motif_id, sample)]
