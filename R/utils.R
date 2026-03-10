@@ -110,20 +110,37 @@
 #' @param atacFrag: a list of data tables containing the fragments information
 #' @param ranges: a genomic object of peaks/motifs
 #' @author Jiayi Wang
-
+#'
 .matchSeqlevels <- function(atacFrag, ranges) {
-    frags <- rbindlist(atacFrag)
-    fragSeq <- unique(frags$seqnames)
-    rangeSeq <- GenomicRanges::seqnames(ranges)
-    common <- intersect(fragSeq,rangeSeq)
+    frags <- data.table::rbindlist(atacFrag)
+    fragSeq <- unique(as.character(frags$seqnames))
+    rangeSeq <- unique(as.character(GenomicRanges::seqnames(ranges)))
+    common <- intersect(fragSeq, rangeSeq)
+
     atacFrag <- lapply(atacFrag, function(frag) {
-        frag <- frag[seqnames %in% common,]
+        frag <- frag[as.character(seqnames) %in% common, ]
         frag$seqnames <- factor(frag$seqnames)
-        frag})
-    ranges <- ranges[seqnames(ranges) %in% common,]
-    # turn seqnames to factor
-    list(atacFrag=atacFrag, ranges=ranges)
+        frag
+    })
+
+    ranges <- ranges[as.character(GenomicRanges::seqnames(ranges)) %in% common]
+
+    list(atacFrag = atacFrag, ranges = ranges)
 }
+
+# .matchSeqlevels <- function(atacFrag, ranges) {
+#     frags <- rbindlist(atacFrag)
+#     fragSeq <- unique(frags$seqnames)
+#     rangeSeq <- GenomicRanges::seqnames(ranges)
+#     common <- intersect(fragSeq,rangeSeq)
+#     atacFrag <- lapply(atacFrag, function(frag) {
+#         frag <- frag[seqnames %in% common,]
+#         frag$seqnames <- factor(frag$seqnames)
+#         frag})
+#     ranges <- ranges[seqnames(ranges) %in% common,]
+#     # turn seqnames to factor
+#     list(atacFrag=atacFrag, ranges=ranges)
+# }
 
 #' @title dtToGr
 #'

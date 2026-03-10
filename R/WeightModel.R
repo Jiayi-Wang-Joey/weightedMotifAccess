@@ -211,8 +211,6 @@
     ...
 ) {
 
-    peakWeight <- match.arg(peakWeight,
-        choices = c("none", "loess"))
     peaks <- data.table::as.data.table(peakRanges)
     peaks$peakID <- seq_len(nrow(peaks))
 
@@ -259,11 +257,9 @@
         mat
     })
     names(allCounts) <- cols
-    if (peakWeight != "none") {
-        allCounts[["counts"]] <- .weightPeaks(allCounts[["counts"]],
-            peakWeight=peakWeight)
-        allCounts[["type_1"]] <- .weightPeaks(allCounts[["type_1"]],
-            peakWeight=peakWeight)
+    if (peakWeight) {
+        allCounts[["counts"]] <- .weightPeaks(allCounts[["counts"]])
+        allCounts[["type_1"]] <- .weightPeaks(allCounts[["type_1"]])
     }
     return(SummarizedExperiment(assays = allCounts, rowRanges = peakRanges))
 }
@@ -294,7 +290,7 @@
 #' @return A \code{\link[SummarizedExperiment]{SummarizedExperiment}} object
 #' containing assays for different fragment types.
 #'
-#' @import fields BSgenome
+#' @import fields BSgenome data.table
 #' @importFrom GenomicRanges findOverlaps GPos resize GRanges
 #' @export
 #'
