@@ -1,4 +1,4 @@
-#' @TODO: write description, and how should be chunkSize used?
+
 .importFragments <- function(fragData, chunkSize=10)
 {
     if(is.list(fragData))
@@ -8,23 +8,21 @@
             print("Importing .bam files")
             param <- Rsamtools::ScanBamParam(what=c('pos', 'qwidth', 'isize'))
             fragData <- lapply(fragData, function(bamPath){
-                readPairs <- GenomicAlignments::readGAlignmentPairs(bamPath, 
+                readPairs <- GenomicAlignments::readGAlignmentPairs(bamPath,
                     param=param)
                 # get fragment coordinates from read pairs
-                frags <- GRanges(seqnames(GenomicAlignments::first(readPairs)), 
+                frags <- GRanges(seqnames(GenomicAlignments::first(readPairs)),
                     IRanges(start=pmin(
-                        GenomicAlignments::start(GenomicAlignments::first(readPairs)), 
-                        GenomicAlignments::start(GenomicAlignments::second(readPairs))), 
+                        GenomicAlignments::start(GenomicAlignments::first(readPairs)),
+                        GenomicAlignments::start(GenomicAlignments::second(readPairs))),
                         end=pmax(
-                            GenomicAlignments::end(GenomicAlignments::first(readPairs)), 
+                            GenomicAlignments::end(GenomicAlignments::first(readPairs)),
                             GenomicAlignments::end(GenomicAlignments::second(readPairs)))))
                 frags <- granges(frags, use.mcols=TRUE)
-                
+
                 # ATAC shift
-                start(frags) <- ifelse(strand(frags) == "+", 
-                    start(frags) + 4, start(frags))
-                end(frags) <- ifelse(strand(frags) == "-", 
-                    end(frags) - 5, end(frags))
+                start(frags) <- start(frags) + 4
+                end(frags) <- end(frags) - 4
                 frags <- as.data.table(frags)
                 #setnames(frags, c("seqnames"), c("chr"))
                 frags$count <- 1
@@ -33,7 +31,7 @@
         }
         else if(grepl(".bed", fragData[[1]], fixed=TRUE))
         {
-            fragData <- lapply(fragData, data.table::fread, select=1:3, 
+            fragData <- lapply(fragData, data.table::fread, select=1:3,
                 col.names=c("seqnames", "start", "end"))
             fragData <- lapply(fragData, function(dt){dt$count <- 1
             dt <- dt[,c("seqnames", "start", "end", "count"), with=FALSE]
@@ -62,6 +60,6 @@
     {
         stop("Data needs to be a list")
     }
-    
+
     return(fragData)
 }

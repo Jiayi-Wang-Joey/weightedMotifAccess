@@ -1,0 +1,32 @@
+Package: WeightInsertModels
+Title: Differential motif accessibility analysis
+Version: 0.0.1
+Authors@R: person("Jiayi", "Wang", email = "jiayi.wang2@uzh", role = c("aut", "cre"))
+Description: A longer paragraph (3-4 sentences) describing the biological 
+    problem your package solves (ATAC-seq fragment weighting and counting).
+License: Artistic-2.0
+Encoding: UTF-8
+LazyData: true
+biocViews: Software, ATACSeq, Normalization, Epigenetics, Sequencing
+Imports: 
+    SummarizedExperiment,
+    GenomicRanges,
+    data.table,
+    BiocParallel,
+    limma,
+    S4Vectors,
+    methods,
+    stats,
+    BSgenome,
+    limma,
+    Matrix,
+    fields,
+    affy,
+    matrixStats
+Suggests: 
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0),
+    BiocStyle
+VignetteBuilder: knitr
+RoxygenNote: 7.3.3

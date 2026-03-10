@@ -1,3 +1,5 @@
+#' @title .resizeRanges
+#'
 #' @description
 #' Resize the peaks
 #'
@@ -5,6 +7,7 @@
 #' @param width: the re-defined size of each peak
 #' @param fix: the fixed point for resizing
 #' @return a GRange object with resized ranges
+#' @author Jiayi Wang
 
 .resizeRanges <- function(peakRanges,
     width = 300,
@@ -27,11 +30,45 @@
     return(peakRanges)
 }
 
+#' @title .sanityCheck
+#'
+#' @description
+#' Sanity check to ensure the input arguments have the correct classes
+#'
+#' @param atacFrag: a list of data.tables that contain the ranges of fragments
+#' @param peakRanges: a GRange object that contains the ranges of peaks
+#' @param motifRanges:  a GRange object that contains the ranges of motifs,
+#' check metadata columns
+#' check seqnames to factor in datatable
+.sanityCheck <- function(atacFrag,
+                         ranges,
+                         type = c("peaks", "motifs")) {
+    lapply(atacFrag, function(frag) {
+        if (!is.data.table(frag)) {
+            stop("Each element in atacFrag should be a data.table")
+        }
+    })
+
+    if (!class(ranges)=="GRanges") {
+        stop("ranges should be a GRanges object")
+    }
+
+    type <- match.arg(type, choices = c("peaks", "motifs"))
+    if (type=="motifs") {
+        if (!("motif" %in% names(mcols(ranges)))) {
+            stop("There is no motif names in metadata columns")
+        }
+    }
+
+}
+#' @title getGCcontent
+#'
 #' @description To calculate the GC content of each fragment or peak
 #' @param gr: a GRanges object
 #' @param genome: a BSgenome object, the corresponding genome
 #' @return a GRanges objects with an additional metadata column gc that contains
 #' GC content
+#' @author  Jiayi Wang
 
 .getGCContent <- function(gr, genome, contentOnly=FALSE) {
     # Sanity check
@@ -51,10 +88,13 @@
     }
 }
 
+#' @title filterFrags
+#'
 #' @description remove fragments that are too short or too long
 #' @param atacFrag: a list of data tables containing the fragments information
 #' @param min and @param max the minimum and maximum limit of fragment length
 #' @return a list of data tables of filtered fragments
+#' @author Jiayi Wang
 .filterFrags <- function(atacFrag, min = 30, max = 2000) {
     res <- lapply(atacFrag, function(frag) {
         frag[,width:=end-start+1]
@@ -64,9 +104,12 @@
     res
 }
 
+#' @title .matchSeqlevels
+#'
 #' @description match the chromosomes between fragments and peaks/motifs
 #' @param atacFrag: a list of data tables containing the fragments information
 #' @param ranges: a genomic object of peaks/motifs
+#' @author Jiayi Wang
 
 .matchSeqlevels <- function(atacFrag, ranges) {
     frags <- rbindlist(atacFrag)
@@ -82,34 +125,37 @@
     list(atacFrag=atacFrag, ranges=ranges)
 }
 
+#' @title dtToGr
+#'
 #' @description
 #' Convert a data table to GenomicRange object
 #' @author Emanuel Sonder
+
 dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
                     strandCol="strand", stranded=FALSE, addMetaCols=TRUE){
   dt <- copy(dt)
   setnames(dt, seqCol, "seqnames", skip_absent = TRUE)
-  
+
   if(stranded) strand <- dt[[strandCol]] else strand <- NULL
-  
+
   gr <- GRanges(seqnames=dt[["seqnames"]],
                 strand=strand,
                 ranges=IRanges(start=dt[[startCol]], end=dt[[endCol]]))
-  
+
   if(startCol==endCol)
   {
     gr <- GPos(seqnames=dt[["seqnames"]],
                strand=strand,
                pos=dt[[startCol]])
   }
-  
+
   if(addMetaCols){
     metaCols <- dt[,setdiff(colnames(dt),
                             c(seqCol, startCol, endCol, strandCol,
                               "seqnames", "chr")),with=FALSE]
     mcols(gr) <- metaCols
   }
-  
+
   return(gr)
 }
 
@@ -296,11 +342,9 @@ getNonRedundantMotifs <- function(format=c("PFMatrix","universal","PWMatrix"),
 #' @param seqStyle Either "ensembl" or "UCSC" depending on the format of the peak file.
 #' @param srcFolder Folder where to find scripts and important objects
 #'
-#' @return
 #' @author Pierre-Luc
-#' @export
 #'
-#' @examples
+
 getpmoi <- function(genome,
                     peaks,
                     spec=c("Homo sapiens", "Mus musculus"), minHits=50L,
@@ -323,7 +367,7 @@ getpmoi <- function(genome,
       spec <- "Hsapiens"}
     else if(spec=="Mus musculus"){
       spec <- "Mmusculus"}
-    
+
     motifs <- getNonRedundantMotifs("universal", species = spec)
   }
 
@@ -349,7 +393,7 @@ getpmoi <- function(genome,
     {
       param <- Rsamtools::ScanBamParam(what=c('pos', 'qwidth', 'isize'))
       readPairs <- GenomicAlignments::readGAlignmentPairs(data, param=param)
-      
+
       # get fragment coordinates from read pairs
       seqDat <- GRanges(seqnames(readPairs@first),
                         IRanges(start=pmin(GenomicAlignments::start(readPairs@first),
@@ -364,7 +408,7 @@ getpmoi <- function(genome,
     else if(grepl(".bed", basename(data), fixed=TRUE)){
       if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
       else{
-        
+
         readBed <- function(data){
           tryCatch(
             {
@@ -399,13 +443,13 @@ getpmoi <- function(genome,
     if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
     seqDat$chr <- factor(seqDat$chr)
   }
-  
+
   if(!is.null(subSample) & is.numeric(subSample)){
     message("Subsampling file")
     subSample <- as.integer(subSample)
     seqDat <- seqDat[sample(1:nrow(seqDat), min(nrow(seqDat), subSample)),]
   }
-  
+
   # Match seqlevelstyle to reference
   if((sum(grepl("chr", levels(seqDat$chr)))==0 & seqLevelStyle=="UCSC") |
      (sum(grepl("chr", levels(seqDat$chr)))>0 & seqLevelStyle=="NCBI")){
@@ -414,7 +458,7 @@ getpmoi <- function(genome,
     seqlevelsStyle(tmpgr) <- seqLevelStyle
     levels(seqDat$chr) <- seqlevels(tmpgr)
   }
-  
+
   # Insert ATAC shift
   if(shift){
     seqDat[, start:=start+4L]
@@ -423,10 +467,10 @@ getpmoi <- function(genome,
   else if(shift){
     warning("Did not shift as no column named strand was not found")
   }
-  
+
   seqDat[, start:=as.integer(start)]
   seqDat[, end:=as.integer(end)]
   if("width" %in% colnames(seqDat)) seqDat$width <- NULL
-  
+
   return(seqDat)
 }
