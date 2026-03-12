@@ -170,7 +170,6 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
   a <- lapply(bins, \(i){
     as(vapply(res, \(x) x$bins == i, FUN.VALUE = logical(length(regions))),
        "sparseMatrix")
-    as(sapply(res, \(x) x$bins==i), "sparseMatrix")
   })
   attr(a, "breaks") <- lapply(res, \(x) x$q)
   a
