@@ -88,10 +88,12 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
     motifs <- do.call(TFBSTools::PFMatrixList,
                       convert_motifs(motifs, class="TFBSTools-PFMatrix"))
   }
-  if(!all(sapply(pairs, \(x) x %in% names(motifs)))){
-    stop("Some of the motifs specific in `pairs` appear not to be in `motifs`.")
+  if(!all(vapply(pairs, \(x) all(x %in% names(motifs)), FUN.VALUE = logical(1)))){
+    stop("Some of the motifs specified in `pairs` appear not to be in `motifs`.")
   }
-  if(is.null(names(pairs))) pairs <- setNames(pairs, sapply(pairs, paste, collapse="+"))
+  if(is.null(names(pairs))) {
+    names(pairs) <- vapply(pairs, paste, collapse="+", FUN.VALUE = character(1))
+  }
   if(is.character(genome) && length(genome)==1)
     genome <- Rsamtools::FaFile(genome)
   
@@ -108,7 +110,7 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
   if(is.null(nDistQuantiles)){
     distCrit <- setNames(seq_along(minDist), paste0(minDist,"<= d <=",maxDist))
     return(lapply(distCrit, \(i){
-      as(sapply(pairs, \(x){
+      as(vapply(pairs, \(x){
         o <- findOverlapPairs(matches[[x[1]]], matches[[x[2]]],
                               maxgap=maxDist[i]-1L, ignore.strand=ignore.strand)
         if(exclusiveDist)
@@ -117,7 +119,7 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
                       IRanges(start=pmin(start(first(o)), start(second(o))),
                               end=pmax(start(first(o)), start(second(o)))))
         return(overlapsAny(regions, gr))
-      }), "sparseMatrix")
+      }, FUN.VALUE = logical(length(regions))), "sparseMatrix")
     }))
   }
 
@@ -166,6 +168,8 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
   bins <- seq_len(nDistQuantiles);
   names(bins) <- paste0("bin", bins)
   a <- lapply(bins, \(i){
+    as(vapply(res, \(x) x$bins == i, FUN.VALUE = logical(length(regions))),
+       "sparseMatrix")
     as(sapply(res, \(x) x$bins==i), "sparseMatrix")
   })
   attr(a, "breaks") <- lapply(res, \(x) x$q)
