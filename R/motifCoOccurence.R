@@ -49,13 +49,21 @@
 #' 
 #'
 #' @returns A list of sparse logical matrices, with one matrix for each value 
-#'   of `minDist`/`maxDist` (or each quantile bin).
+#'   of `minDist`/`maxDist` (or each quantile bin). Columns represent motif 
+#'   pairs, and rows represent regions.
+#'
 #' @author Pierre-Luc Germain
 #' @export
 #' @importFrom motifmatchr matchMotifs
 #' @importFrom TFBSTools PFMatrixList
 #' @importFrom universalmotif convert_motifs
 #' @importFrom Rsamtools FaFile
+#' @importFrom GenomicRanges GRanges resize start end width  
+#' @importFrom GenomicRanges distanceToNearest seqnames findOverlaps
+#' @importFrom IRanges IRanges findOverlapPairs overlapsAny
+#' @importFrom S4Vectors from to mcols mcols<-
+#' @importFrom methods as
+#' @importFrom stats quantile aggregate setNames
 motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
                              minDist=5, maxDist=50, exclusiveDist=TRUE,
                              restrictToRegions=FALSE, ...,
@@ -126,8 +134,8 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
       # map back to regions:
       o <- findOverlaps(m1, regions, ignore.strand=ignore.strand)
       o <- o[!duplicated(from(o))]
-      m1$region <- NA_integer_
-      m1$region[from(o)] <- to(o)
+      mcols(m1)$region <- NA_integer_
+      mcols(m1)$region[from(o)] <- to(o)
       d1$peak <- m1$region[d1[,1]]
       d1
     }
