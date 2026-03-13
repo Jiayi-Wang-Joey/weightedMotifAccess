@@ -694,7 +694,34 @@
     return(activityScore)
 }
 
-
+#' @title Get motif activity scores
+#'
+#' @description
+#' Count the number of fragments in each peak region, with or without
+#' fragment-level and peak-level weighting (normalization).
+#' @param se A \code{SummarizedExperiment} of
+#' @param atacFrag A \code{list} of \code{data.table} objects or a \code{GRangesList}.
+#' @param ranges A \code{GRanges} or \code{data.table} object containing peak regions.
+#' @param genome A \code{BSgenome} object or string (e.g., "hg38") for GC content.
+#' @param species Character; species name (e.g., "human") for chromosome filtering.
+#' @param fragWeight Logical; whether to apply fragment-level bias correction.
+#' @param peakWeight Logical; whether to apply cyclic loess normalization on counts.
+#' @param resize Logical; whether to resize peak ranges to a fixed width.
+#' @param width Integer; width to resize peaks to if \code{resize=TRUE}.
+#' @param nWidthBins,nGCBins Integer; number of bins for fragment weighting.
+#' @param cuts Numeric vector; fragment length thresholds for classification.
+#' @param minFrag,maxFrag Integer; fragment length filters.
+#' @param smooth Logical; whether to apply smoothing on fragment weights.
+#' @param aRange Numeric; bandwidth for smoothing.
+#' @param ... Additional arguments passed to internal weighting functions.
+#'
+#' @return A \code{\link[SummarizedExperiment]{SummarizedExperiment}} object
+#' containing assays for different fragment types.
+#'
+#' @import fields BSgenome data.table
+#' @importFrom GenomicRanges findOverlaps GPos resize GRanges
+#' @export
+#'
 computeMotifActivityScore <- function (se,
     atacFrag,
     motifRanges,
