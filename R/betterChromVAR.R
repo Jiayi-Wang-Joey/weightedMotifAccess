@@ -193,11 +193,14 @@ betterChromVAR <- function(object, annotations, grouping=NULL, bias=NULL,
   bin2peakMat <- sparseMatrix(i=bin_map, j=seq_along(expectation), 
                               dims=c(nrow(binBinProbs), length(expectation)))
 
-  # bin-level sample counts
-  binCounts <- bin2peakMat %*% counts
-  cs <- colSums(binCounts)
-    
+  # motif-containing peaks per bin (M x B)
+  motif_bin_counts <- t(annotations) %*% t(bin2peakMat)
+  binCounts <- NULL
+  
   if(shrinkage != "none"){
+    binCounts <- bin2peakMat %*% counts
+    cs <- colSums(binCounts)
+    
     if(verbose) message("Applying shrinkage")
     il <- split(seq_len(ncol(binCounts)), grouping)
     binCounts <- Reduce(cbind2, bplapply(il, BPPARAM=BPPARAM, \(i){
@@ -222,28 +225,30 @@ betterChromVAR <- function(object, annotations, grouping=NULL, bias=NULL,
   
   if(verbose) message("Computing deviations")
   
-  # motif-containing peaks per bin (M x B)
-  motif_bin_counts <- t(annotations) %*% t(bin2peakMat)
   
   # bin-level expectations and variances (B x S)
-  if((nW <- BiocParallel::bpnworkers(BPPARAM))>1 & ncol(binCounts>10000)){
-    i <- seq_len(ncol(binCounts))
-    res <- bplapply(split(i, cut(i, nW, labels=FALSE)), BPPARAM=BPPARAM, \(i){
-      .getDeviations(binBinProbs, annotations, motif_bin_counts, binCounts[,i],
+  i <- seq_len(ncol(counts))
+  if((nW <- BiocParallel::bpnworkers(BPPARAM))>1 & ncol(counts>5000)){
+    chunks <- split(i, cut(i, nW, labels=FALSE))
+    res <- bplapply(chunks, BPPARAM=BPPARAM, \(i){
+      if(shrinkage=="none"){
+        binCounts2 <- bin2peakMat %*% counts[,i]
+      }else{
+        binCounts2 <- binCounts[,i]
+      }
+      .getDeviations(binBinProbs, annotations, motif_bin_counts, binCounts2,
                      counts[,i])
     })
-    deviations <- Reduce(cbind2, lapply(res, \(x) x$dev))
-    z_scores <- Reduce(cbind2, lapply(res, \(x) x$z))
+    res <- list(deviations = Reduce(cbind2, lapply(res, \(x) x$deviations)),
+                z = Reduce(cbind2, lapply(res, \(x) x$z)))
   }else{
-    res <- .getDeviations(binBinProbs, annotations, motif_bin_counts, binCounts,
-                          counts)
-    deviations <- res$dev
-    z_scores <- res$z
+    if(is.null(binCounts)) binCounts <- bin2peakMat %*% counts
+    res <- .getDeviations(binBinProbs, annotations, motif_bin_counts,
+                          binCounts, counts)
   }
-  rm(binCounts)
   
   SummarizedExperiment(
-    assays = list(deviations=deviations, z=z_scores),
+    assays = res,
     colData = colData(object),
     rowData = motifCD,
     metadata = metadata(object)
@@ -261,6 +266,7 @@ betterChromVAR <- function(object, annotations, grouping=NULL, bias=NULL,
   motif_bg_sd <- motif_bin_counts %*% V
   if(is(motif_bg_sd, "sparseMatrix")){
     motif_bg_sd@x <- sqrt(pmax(0, motif_bg_sd@x))
+    motif_bg_sd <- drop0(motif_bg_sd)
   }else{
     motif_bg_sd <- sqrt(pmax(0, as.matrix(motif_bg_sd)))
   }
@@ -273,7 +279,7 @@ betterChromVAR <- function(object, annotations, grouping=NULL, bias=NULL,
   z_scores <- deviations / motif_bg_sd
   deviations <- deviations / motif_bg_exp
   
-  list(dev=deviations, z=z_scores)
+  list(deviations=deviations, z=z_scores)
 }
 
 .fastColNorm <- function(x, cs=colSums(x)){
