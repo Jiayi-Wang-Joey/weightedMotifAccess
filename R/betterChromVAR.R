@@ -111,8 +111,8 @@ getBinProbMatrix <- function(x, bias=NULL, w=0.1, bs=50, pseudo=0){
 #'   giving the expected counts. If NULL, defaults to mean counts (eventually
 #'   grouped, see `grouping`).
 #' @param nthreads Either an integer scalar indicating the number of threads to
-#'   use, or a BiocParallelParam object. This is ignored unless `grouping` is 
-#'   given and shrinkage is applied.
+#'   use, or a BiocParallelParam object. This is only used for subsets of the 
+#'   steps.
 #' @author Pierre-Luc Germain
 #' @references
 #'   Schep, A.N., Wu, B., Buenrostro, J.D., Greenleaf W.J. chromVAR: 
@@ -123,11 +123,11 @@ getBinProbMatrix <- function(x, bias=NULL, w=0.1, bs=50, pseudo=0){
 #'   z-scores for each motif/sample.
 #' @importFrom SummarizedExperiment SummarizedExperiment assay colData rowData
 #' @importFrom S4Vectors metadata
-#' @importFrom Matrix crossprod sparseMatrix kronecker Diagonal
-#' @importFrom BiocParallel bplapply SerialParam MulticoreParam
+#' @importFrom Matrix crossprod sparseMatrix kronecker Diagonal cbind2
+#' @importFrom BiocParallel bplapply SerialParam MulticoreParam bpnworkers
 #' @export
 betterChromVAR <- function(object, annotations, grouping=NULL, bias=NULL, 
-                           expectation=NULL, verbose=TRUE, bs=50, sigma=1,
+                           expectation=NULL, verbose=FALSE, bs=50, sigma=1,
                            nthreads=NULL, w=0.05,
                            shrinkage=c("none", "average", "smooth")){
   
@@ -173,7 +173,7 @@ betterChromVAR <- function(object, annotations, grouping=NULL, bias=NULL,
   stopifnot(length(grouping)==ncol(object))
   ngroups <- length(levels(grouping))
                     
-  if(is.null(nthreads) || ngroups==1){
+  if(is.null(nthreads)){
     BPPARAM <- SerialParam(progress=(verbose && ngroups>1))
   }else if(is.integer(nthreads) && length(nthreads)==1 && nthreads>0L){
     BPPARAM <- MulticoreParam(nthreads, progress=verbose)
@@ -220,21 +220,51 @@ betterChromVAR <- function(object, annotations, grouping=NULL, bias=NULL,
     binCounts <- binCounts[,order(unlist(il))]
   }
   
-  if(verbose) message("Computing bin-level expectations and variances")
-  # bin-level expectations and variances (B x S)
-  E_us <- binBinProbs %*% binCounts
-  V_us <- (binBinProbs %*% binCounts^2) - (E_us^2)
-  rm(binCounts)
+  if(verbose) message("Computing deviations")
   
-  if(verbose) message("Computing adjusted deviations")
   # motif-containing peaks per bin (M x B)
   motif_bin_counts <- t(annotations) %*% t(bin2peakMat)
+  
+  # bin-level expectations and variances (B x S)
+  if((nW <- BiocParallel::bpnworkers(BPPARAM))>1 & ncol(binCounts>10000)){
+    i <- seq_len(ncol(binCounts))
+    res <- bplapply(split(i, cut(i, nW, labels=FALSE)), BPPARAM=BPPARAM, \(i){
+      .getDeviations(binBinProbs, annotations, motif_bin_counts, binCounts[,i],
+                     counts[,i])
+    })
+    deviations <- Reduce(cbind2, lapply(res, \(x) x$dev))
+    z_scores <- Reduce(cbind2, lapply(res, \(x) x$z))
+  }else{
+    res <- .getDeviations(binBinProbs, annotations, motif_bin_counts, binCounts,
+                          counts)
+    deviations <- res$dev
+    z_scores <- res$z
+  }
+  rm(binCounts)
+  
+  SummarizedExperiment(
+    assays = list(deviations=deviations, z=z_scores),
+    colData = colData(object),
+    rowData = motifCD,
+    metadata = metadata(object)
+  )
+}
 
+.getDeviations <- function(binBinProbs, annotations, motif_bin_counts,
+                           binCounts, counts){
+  # bin-level expectations and variances (B x S)
+  E <- binBinProbs %*% binCounts
+  V <- (binBinProbs %*% binCounts^2) - (E^2)
+  
   # motif-level background stats (M x S)
-  motif_bg_exp <- (motif_bin_counts %*% E_us)
-  motif_bg_sd <- sqrt(pmax(0, as.matrix(motif_bin_counts %*% V_us)))
-  rm(V_us, E_us)
-
+  motif_bg_exp <- motif_bin_counts %*% E
+  motif_bg_sd <- motif_bin_counts %*% V
+  if(is(motif_bg_sd, "sparseMatrix")){
+    motif_bg_sd@x <- sqrt(pmax(0, motif_bg_sd@x))
+  }else{
+    motif_bg_sd <- sqrt(pmax(0, as.matrix(motif_bg_sd)))
+  }
+  
   # observed motif sums (M x S)
   observed_motif_sum <- Matrix::crossprod(annotations, counts)
   
@@ -243,12 +273,7 @@ betterChromVAR <- function(object, annotations, grouping=NULL, bias=NULL,
   z_scores <- deviations / motif_bg_sd
   deviations <- deviations / motif_bg_exp
   
-  SummarizedExperiment(
-    assays = list(deviations=deviations, z=z_scores),
-    colData = colData(object),
-    rowData = motifCD,
-    metadata = metadata(object)
-  )
+  list(dev=deviations, z=z_scores)
 }
 
 .fastColNorm <- function(x, cs=colSums(x)){

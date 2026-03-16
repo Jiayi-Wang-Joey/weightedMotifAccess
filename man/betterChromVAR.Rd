@@ -10,7 +10,7 @@ betterChromVAR(
   grouping = NULL,
   bias = NULL,
   expectation = NULL,
-  verbose = TRUE,
+  verbose = FALSE,
   bs = 50,
   sigma = 1,
   nthreads = NULL,
@@ -46,8 +46,8 @@ grouped, see `grouping`).}
 `shrinkage="smooth"`.}
 
 \item{nthreads}{Either an integer scalar indicating the number of threads to
-use, or a BiocParallelParam object. This is ignored unless `grouping` is 
-given and shrinkage is applied.}
+use, or a BiocParallelParam object. This is only used for subsets of the 
+steps.}
 
 \item{w}{Standard deviation of the Gaussian kernel. Values close to zero will
 effectively mean that only peaks from the same bins are used as background,
