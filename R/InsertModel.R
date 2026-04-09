@@ -153,12 +153,20 @@
         setnames(atacStartInserts, "start", "insert")
         setnames(atacEndInserts, "end", "insert")
 
+        # ai <- cbind(rbindlist(list(atacStartInserts, atacEndInserts)),
+        #     rbindlist(list(
+        #         md[subjectHits(startHits), c("motif_center", "seqnames", "start",
+        #             "end", "motif_id", "motif_match_id")],
+        #         md[subjectHits(endHits), c("motif_center","seqnames", "start", "end", "motif_id",
+        #             "motif_match_id")])))
+
         ai <- cbind(rbindlist(list(atacStartInserts, atacEndInserts)),
             rbindlist(list(
-                md[subjectHits(startHits), c("motif_center", "seqnames", "start",
+                md[subjectHits(startHits), c("motif_center", "chr", "start",
                     "end", "motif_id", "motif_match_id")],
-                md[subjectHits(endHits), c("motif_center","seqnames", "start", "end", "motif_id",
+                md[subjectHits(endHits), c("motif_center","chr", "start", "end", "motif_id",
                     "motif_match_id")])))
+        ai[,seqnames:=chr]
 
         # count insertions around motif
         ai[,rel_pos:=insert-motif_center]
@@ -697,8 +705,7 @@
 #' @title Get motif activity scores
 #'
 #' @description
-#' Count the number of fragments in each peak region, with or without
-#' fragment-level and peak-level weighting (normalization).
+#' Compute motif activity scores data based on insertion profiles using ATAC-seq
 #' @param se A \code{SummarizedExperiment} of
 #' @param atacFrag A \code{list} of \code{data.table} objects or a \code{GRangesList}.
 #' @param ranges A \code{GRanges} or \code{data.table} object containing peak regions.
@@ -706,20 +713,17 @@
 #' @param species Character; species name (e.g., "human") for chromosome filtering.
 #' @param fragWeight Logical; whether to apply fragment-level bias correction.
 #' @param peakWeight Logical; whether to apply cyclic loess normalization on counts.
-#' @param resize Logical; whether to resize peak ranges to a fixed width.
-#' @param width Integer; width to resize peaks to if \code{resize=TRUE}.
-#' @param nWidthBins,nGCBins Integer; number of bins for fragment weighting.
-#' @param cuts Numeric vector; fragment length thresholds for classification.
 #' @param minFrag,maxFrag Integer; fragment length filters.
-#' @param smooth Logical; whether to apply smoothing on fragment weights.
-#' @param aRange Numeric; bandwidth for smoothing.
+#' @param symmteric Logical; whether to use symmetric or asymmetric insertion profiles
+#' @param libNorm Logical; whether to use library size normalization
 #' @param ... Additional arguments passed to internal weighting functions.
 #'
 #' @return A \code{\link[SummarizedExperiment]{SummarizedExperiment}} object
 #' containing assays for different fragment types.
 #'
-#' @import fields BSgenome data.table
+#' @import fields BSgenome data.table chromVAR GenomeInfoDb
 #' @importFrom GenomicRanges findOverlaps GPos resize GRanges
+#' @importFrom SummarizedExperiment rowRanges
 #' @export
 #'
 computeMotifActivityScore <- function (se,
@@ -766,7 +770,7 @@ computeMotifActivityScore <- function (se,
         nullModel=nullModel,
         symmetric=symmetric,
         libNorm=libNorm)
-    fragDt <- frg
+    fragDt <- copy(frg)
     rm(frg)
     peakMatchScore <- .getPeakMatchScore(matchScore, peakRange)
     backgroundPeaks <- .getBackgroundPeaks(se, genome=genome,

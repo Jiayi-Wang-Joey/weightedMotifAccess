@@ -236,8 +236,8 @@
         overlaps <- cbind(frag[queryHits(hits),],
             peaks[subjectHits(hits), c("peakID")])
         tmp <- overlaps[, c(list(counts = sum(count, na.rm = TRUE)),
-            #list(mean_width = mean(width, na.rm = TRUE)),
-            #list(median_width = median(width, na.rm = TRUE)),
+            list(mean_width = mean(width, na.rm = TRUE)),
+            list(median_width = median(width, na.rm = TRUE)),
             lapply(.SD, sum, na.rm = TRUE)),
             by = peakID, .SDcols = c(types)]
 

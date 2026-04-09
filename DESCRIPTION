@@ -11,6 +11,13 @@ biocViews: Software, ATACSeq, Normalization, Epigenetics, Sequencing
 Imports: 
     SummarizedExperiment,
     GenomicRanges,
+    GenomeInfoDb,
+    IRanges,
+    Rsamtools,
+    TFBSTools,
+    chromVAR,
+    motifmatchr,
+    universalmotif,
     data.table,
     BiocParallel,
     limma,
@@ -18,7 +25,6 @@ Imports:
     methods,
     stats,
     BSgenome,
-    limma,
     Matrix,
     fields,
     affy,
@@ -28,5 +34,4 @@ Suggests:
     rmarkdown,
     testthat (>= 3.0.0),
     BiocStyle
-VignetteBuilder: knitr
 RoxygenNote: 7.3.3
