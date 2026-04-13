@@ -248,7 +248,7 @@
 
     })
 
-    cols <- names(fragCounts[[1]])[grepl("^type_|counts",
+    cols <- names(fragCounts[[1]])[grepl("^type_|counts|width",
         names(fragCounts[[1]]))]
     allCounts <- lapply(cols, function(x) {
         lst <- lapply(fragCounts, function(.) data.frame(.)[,x])
