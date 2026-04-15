@@ -14,14 +14,15 @@ motifCoOccurence(
   maxDist = 50,
   exclusiveDist = TRUE,
   restrictToRegions = FALSE,
-  ...,
   nDistQuantiles = NULL,
   ignore.strand = TRUE
 )
 }
 \arguments{
-\item{motifs}{A named list of motifs (in a format recognized by 
-`universalmotif`). Only those specified in `pairs` will be used).}
+\item{motifs}{A named `PFMatrixList` or `PWMatrixList` object containing 
+motifs (only those specified in `pairs` will be used). If you're not 
+familiar with these objects, see the `TFBSTools` package, and the 
+`univervalmotif` package on how to convert motifs.}
 
 \item{pairs}{A list of pairs of motifs for which to compute co-occurence.
 Specifically, this should be a (optionally named) list of character vectors
@@ -50,20 +51,18 @@ only for the smallest of the distance thresholds. Ignored if `minDist` and
 to `regions`. If FALSE (default), one of the motifs still needs to be within
 the regions, but the other can be +/- `maxDist` around the region.}
 
-\item{...}{Passed to \code{link[motifmatchr]{matchMotifs}}.}
-
 \item{nDistQuantiles}{The number of distance quantiles to use. Disabled by
 default and requires `exclusiveDist=TRUE`. When a positive integer, the 
 span from 0 to `maxDist` is split into `nDistQuantiles` number of 
-quantiles for each pair of motifs.}
+quantiles for each pair of motifs. Note that `minDist` is ignored in this
+mode.}
 
 \item{ignore.strand}{Logical; whether to ignore the strand for co-occurence
 (default TRUE).}
 }
 \value{
 A list of sparse logical matrices, with one matrix for each value 
-  of `minDist`/`maxDist` (or each quantile bin). Columns represent motif 
-  pairs, and rows represent regions.
+  of `minDist`/`maxDist` (or each quantile bin).
 }
 \description{
 Returns regions that have matches for given pairs of motifs within certain 
@@ -83,7 +82,4 @@ populated by setting `nDistQuantiles` (the breaks used can be retrieved from
 `attr(results, "breaks")` ).
 Also note that all matches are stored in memory, so using this function 
 across the entire genome is not advisable (unless for very few motifs).
-}
-\author{
-Pierre-Luc Germain
 }

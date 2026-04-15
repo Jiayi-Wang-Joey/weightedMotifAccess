@@ -3,8 +3,10 @@
 #' Returns regions that have matches for given pairs of motifs within certain 
 #' distances of each other.
 #'
-#' @param motifs A named list of motifs (in a format recognized by 
-#'   `universalmotif`). Only those specified in `pairs` will be used).
+#' @param motifs A named `PFMatrixList` or `PWMatrixList` object containing 
+#'   motifs (only those specified in `pairs` will be used). If you're not 
+#'   familiar with these objects, see the `TFBSTools` package, and the 
+#'   `univervalmotif` package on how to convert motifs.
 #' @param pairs A list of pairs of motifs for which to compute co-occurence.
 #'   Specifically, this should be a (optionally named) list of character vectors
 #'   of length 2, corresponding to names in `motifs`.
@@ -27,10 +29,10 @@
 #' @param nDistQuantiles The number of distance quantiles to use. Disabled by
 #'   default and requires `exclusiveDist=TRUE`. When a positive integer, the 
 #'   span from 0 to `maxDist` is split into `nDistQuantiles` number of 
-#'   quantiles for each pair of motifs.
+#'   quantiles for each pair of motifs. Note that `minDist` is ignored in this
+#'   mode.
 #' @param ignore.strand Logical; whether to ignore the strand for co-occurence
 #'   (default TRUE).
-#' @param ... Passed to \code{link[motifmatchr]{matchMotifs}}.
 #' 
 #' @details
 #' Note that both `minDist` and `maxDist`, rather than specifying a single 
@@ -49,26 +51,16 @@
 #' 
 #'
 #' @returns A list of sparse logical matrices, with one matrix for each value 
-#'   of `minDist`/`maxDist` (or each quantile bin). Columns represent motif 
-#'   pairs, and rows represent regions.
-#'
-#' @author Pierre-Luc Germain
+#'   of `minDist`/`maxDist` (or each quantile bin).
 #' @export
 #' @importFrom motifmatchr matchMotifs
-#' @importFrom TFBSTools PFMatrixList
-#' @importFrom universalmotif convert_motifs
 #' @importFrom Rsamtools FaFile
-#' @importFrom GenomicRanges GRanges resize start end width  
-#' @importFrom GenomicRanges distanceToNearest seqnames findOverlaps
-#' @importFrom IRanges IRanges findOverlapPairs overlapsAny
-#' @importFrom S4Vectors from to mcols mcols<-
-#' @importFrom methods as
-#' @importFrom stats quantile aggregate setNames
 motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
                              minDist=5, maxDist=50, exclusiveDist=TRUE,
-                             restrictToRegions=FALSE, ...,
+                             restrictToRegions=FALSE,
                              nDistQuantiles=NULL, ignore.strand=TRUE){
   
+  stopifnot(is(motifs, "XMatrixList"))
   stopifnot(is.list(pairs) && all(lengths(pairs)==2))
   stopifnot(is(regions, "GRanges"))
   stopifnot(length(minDist)==length(maxDist))
@@ -84,16 +76,11 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
       stop("`maxDist` and `minDist` should each have a length of 1 when using",
            " `nDistQuantiles`.")
   }
-  if(!is(motifs, "XMatrixList")){
-    motifs <- do.call(TFBSTools::PFMatrixList,
-                      convert_motifs(motifs, class="TFBSTools-PFMatrix"))
+  if(!all(sapply(pairs, \(x) x %in% names(motifs)))){
+    stop("Some of the motifs specific in `pairs` appear not to be in `motifs`.")
   }
-  if(!all(vapply(pairs, \(x) all(x %in% names(motifs)), FUN.VALUE = logical(1)))){
-    stop("Some of the motifs specified in `pairs` appear not to be in `motifs`.")
-  }
-  if(is.null(names(pairs))) {
-    names(pairs) <- vapply(pairs, paste, collapse="+", FUN.VALUE = character(1))
-  }
+  if(is.null(names(pairs)))
+    pairs <- setNames(pairs, sapply(pairs, paste, collapse="+"))
   if(is.character(genome) && length(genome)==1)
     genome <- Rsamtools::FaFile(genome)
   
@@ -103,14 +90,14 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
     r2 <- resize(regions, width=width(regions)+2*max(maxDist), fix="center")
   }
   matches <- matchMotifs(motifs[unique(unlist(pairs))], r2,
-                         genome=genome, out="positions", ...)
+                         genome=genome, out="positions")
   
   if(centerDist) matches <- lapply(matches, resize, fix="center", width=1)
   
   if(is.null(nDistQuantiles)){
     distCrit <- setNames(seq_along(minDist), paste0(minDist,"<= d <=",maxDist))
     return(lapply(distCrit, \(i){
-      as(vapply(pairs, \(x){
+      as(sapply(pairs, \(x){
         o <- findOverlapPairs(matches[[x[1]]], matches[[x[2]]],
                               maxgap=maxDist[i]-1L, ignore.strand=ignore.strand)
         if(exclusiveDist)
@@ -119,7 +106,7 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
                       IRanges(start=pmin(start(first(o)), start(second(o))),
                               end=pmax(start(first(o)), start(second(o)))))
         return(overlapsAny(regions, gr))
-      }, FUN.VALUE = logical(length(regions))), "sparseMatrix")
+      }), "sparseMatrix")
     }))
   }
 
@@ -136,8 +123,8 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
       # map back to regions:
       o <- findOverlaps(m1, regions, ignore.strand=ignore.strand)
       o <- o[!duplicated(from(o))]
-      mcols(m1)$region <- NA_integer_
-      mcols(m1)$region[from(o)] <- to(o)
+      m1$region <- NA_integer_
+      m1$region[from(o)] <- to(o)
       d1$peak <- m1$region[d1[,1]]
       d1
     }
@@ -168,8 +155,7 @@ motifCoOccurence <- function(motifs, pairs, regions, genome, centerDist=TRUE,
   bins <- seq_len(nDistQuantiles);
   names(bins) <- paste0("bin", bins)
   a <- lapply(bins, \(i){
-    as(vapply(res, \(x) x$bins == i, FUN.VALUE = logical(length(regions))),
-       "sparseMatrix")
+    as(sapply(res, \(x) x$bins==i), "sparseMatrix")
   })
   attr(a, "breaks") <- lapply(res, \(x) x$q)
   a
