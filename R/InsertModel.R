@@ -1,3 +1,51 @@
+#' computeDeviationsWeighted
+#'
+#' @param counts A matrix of aggregated (weighted) counts, with motifs as rows
+#'   and samples as columns.
+#' @param annotations A matrix of motif annotations, with peaks as rows and
+#'   motifs as columns.
+#' @param bgcounts A matrix of background-weighted counts, with peaks as rows
+#'   and samples as columns.
+#' @param bg An optional `bcvBackground` object. Either `bg` or `bgcounts` must
+#'   be given.
+#'
+#' @returns A list with two matrices, for deviations and z-scores.
+#' @author Pierre-Luc Germain
+#' @importFrom Matrix crossprod t sparseMatrix
+#' @importFrom betterChromVAR computeBackgrounds
+#' @export
+computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NULL){
+  stopifnot(!is.null(bg) || !is.null(bgcounts))
+  if(is.null(bg)){
+    bg <- computeBackgrounds(bgcounts, getBackgroundBins(bgcounts))
+  }else if(length(bg@depth)==0 || length(bg@expectation)==0){
+    stop("Incomplete background; please run computeBackgrounds() first.")
+  }else if(length(bg@depth) != ncol(counts)){
+    stop("The background provided does not seem to fit `counts`")
+  }else if(length(bg@expectation) != nrow(annotations)){
+    stop("The background provided does not seem to fit `annotations`")
+  }
+  stopifnot(nrow(counts)==ncol(annotations))
+
+  binMap <- bg@peak2bin
+  bin2peakMat <- sparseMatrix(i=binMap, j=seq_along(binMap),
+                              dims=c(nrow(bg@binBinProbs), length(binMap)))
+  motifBinCounts <- Matrix::t(annotations) %*% Matrix::t(bin2peakMat)
+
+  motif_bg_exp <- as.matrix(motifBinCounts %*% bg@E)
+
+  numerator <- counts - motif_bg_exp
+
+  # z-scores:
+  z <- numerator / sqrt(pmax(0, as.matrix(motifBinCounts %*% bg@V)))
+
+  # deviations:
+  globalMotifAvg <- as.vector(Matrix::crossprod(annotations, bg@expectation))
+  sf <- bg@depth / sum(bg@expectation)
+  deviations <- numerator/outer(globalMotifAvg, sf)
+
+  list(deviations=deviations, z=z)
+}
 
 .getInsertionProfiles <- function(atacFrag,
     motifRanges,
