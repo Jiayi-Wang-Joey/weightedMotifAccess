@@ -15,16 +15,17 @@
     ...) {
 
     fix <- match.arg(fix, choices = c("center", "start", "end", "summit"))
-    # Sanity check
-    if (!class(peakRanges) == "GRanges") {
+
+    if (!inherits(peakRanges, "GRanges")) {
         stop("peakRanges must be a GRanges object")
     }
 
     if (fix == "summit") {
-        start(peakRanges) <- round(peakRanges$summit-width/2)
-        end(peakRanges) <- start(peakRanges)+width-1
+        start(peakRanges) <- round(peakRanges$summit - width / 2)
+        end(peakRanges) <- start(peakRanges) + width - 1
+        peakRanges <- trim(peakRanges)
     } else {
-        peakRanges <- resize(peakRanges, width = width, fix = fix)
+        peakRanges <- trim(resize(peakRanges, width = width, fix = fix))
     }
 
     return(peakRanges)
@@ -142,10 +143,19 @@
 #     list(atacFrag=atacFrag, ranges=ranges)
 # }
 
-#' @title dtToGr
+#' Convert a data.table to a GRanges object
 #'
-#' @description
-#' Convert a data table to GenomicRange object
+#' @param x A data.frame or data.table with genomic coordinates.
+#' @return A GRanges object.
+#' @examples
+#' library(data.table)
+#' dt <- data.table(
+#'     seqnames = c("chr1", "chr1"),
+#'     start = c(100, 200),
+#'     end = c(150, 250)
+#' )
+#' gr <- dtToGr(dt)
+#' gr
 #' @author Emanuel Sonder
 
 dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
@@ -176,11 +186,26 @@ dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
   return(gr)
 }
 
-.standardChromosomes <- function(gr, species) {
-    gr <- keepStandardChromosomes(gr,
-        species=species,
-        pruning.mode="coarse")
-    seqlevelsStyle(gr) <- "UCSC"
+.standardChromosomes <- function(gr, species, genome = NULL, coerceToGenome = TRUE) {
+    gr <- keepStandardChromosomes(
+        gr,
+        species = species,
+        pruning.mode = "coarse"
+    )
+
+    if (isTRUE(coerceToGenome)) {
+        if (is.null(genome)) {
+            stop("`genome` must be provided when `coerceToGenome = TRUE`.")
+        }
+
+        genome_style <- GenomeInfoDb::seqlevelsStyle(genome)
+
+        if (length(genome_style) == 0L) {
+            stop("Could not determine seqlevelsStyle from `genome`.")
+        }
+
+        GenomeInfoDb::seqlevelsStyle(gr) <- genome_style[1]
+    }
     gr
 }
 
@@ -351,143 +376,143 @@ getNonRedundantMotifs <- function(format=c("PFMatrix","universal","PWMatrix"),
   )
 }
 
-#' Get motif matches
+#' #' Get motif matches
+#' #'
+#' #' @param genome A BSgenome respective to the genome used for the alignment.
+#' #' @param peakpath The path to the merged ATAC-seq peaks from control and treatment conditions.
+#' #' @param spec Species. Either "Hsapiens" or "Mmusculus".
+#' #' @param seqStyle Either "ensembl" or "UCSC" depending on the format of the peak file.
+#' #' @param srcFolder Folder where to find scripts and important objects
+#' #'
+#' #' @author Pierre-Luc
+#' #'
 #'
-#' @param genome A BSgenome respective to the genome used for the alignment.
-#' @param peakpath The path to the merged ATAC-seq peaks from control and treatment conditions.
-#' @param spec Species. Either "Hsapiens" or "Mmusculus".
-#' @param seqStyle Either "ensembl" or "UCSC" depending on the format of the peak file.
-#' @param srcFolder Folder where to find scripts and important objects
+#' getpmoi <- function(genome,
+#'                     peaks,
+#'                     spec=c("Homo sapiens", "Mus musculus"), minHits=50L,
+#'                     seqStyle=c("ensembl", "NCBI","UCSC"), keepTop=NULL,
+#'                     srcFolder, motifs=NULL, thresh=NULL){
+#'   seqStyle <- match.arg(seqStyle)
 #'
-#' @author Pierre-Luc
+#'   if(is.character(peaks)){
+#'     peals <- sort(rtracklayer::import(peaks))
+#'   }
+#'   peaks <- keepStandardChromosomes(peaks,
+#'                                    pruning.mode = "coarse")
 #'
-
-getpmoi <- function(genome,
-                    peaks,
-                    spec=c("Homo sapiens", "Mus musculus"), minHits=50L,
-                    seqStyle=c("ensembl", "NCBI","UCSC"), keepTop=NULL,
-                    srcFolder, motifs=NULL, thresh=NULL){
-  seqStyle <- match.arg(seqStyle)
-
-  if(is.character(peaks)){
-    peals <- sort(rtracklayer::import(peaks))
-  }
-  peaks <- keepStandardChromosomes(peaks,
-                                   pruning.mode = "coarse")
-
-  seqlevelsStyle(genome) <- seqStyle
-  peak_seqs <- memes::get_sequence(peaks, genome)
-
-  # Get the motifs in universal format required by memes
-  if(is.null(motifs)){
-    if(spec=="Homo sapiens"){
-      spec <- "Hsapiens"}
-    else if(spec=="Mus musculus"){
-      spec <- "Mmusculus"}
-
-    motifs <- getNonRedundantMotifs("universal", species = spec)
-  }
-
-  # Obtain the positions of motif instances which are later required as input for runATAC
-  if(is.null(thresh)) thresh <- 1e-4
-  pmoi <- memes::runFimo(peak_seqs,
-                  motifs, thresh=thresh,
-                  meme_path="/common/meme/bin/",
-                  skip_matched_sequence=TRUE)
-  pmoi <- pmoi[order(mcols(pmoi)$motif_id, -mcols(pmoi)$score)]
-  pmoi <- split(pmoi, pmoi$motif_id)
-  if(!is.null(minHits)) pmoi <- pmoi[which(lengths(pmoi)>=minHits)]
-  if(!is.null(keepTop)) pmoi <- lapply(split(pmoi, pmoi$motif_id), n=keepTop, FUN=head)
-  pmoi <- sort(unlist(GRangesList(pmoi)))
-  return(pmoi)
-}
-
-#' @author Emanuel Sonder
-.processData <- function(data, readAll=FALSE, shift=FALSE,
-                         subSample=NULL, seqLevelStyle="UCSC"){
-  if(is.character(data)){
-    if(grepl(".bam", basename(data), fixed=TRUE))
-    {
-      param <- Rsamtools::ScanBamParam(what=c('pos', 'qwidth', 'isize'))
-      readPairs <- GenomicAlignments::readGAlignmentPairs(data, param=param)
-
-      # get fragment coordinates from read pairs
-      seqDat <- GRanges(seqnames(readPairs@first),
-                        IRanges(start=pmin(GenomicAlignments::start(readPairs@first),
-                                           GenomicAlignments::start(readPairs@last)),
-                                end=pmax(GenomicAlignments::end(readPairs@first),
-                                         GenomicAlignments::end(readPairs@last))),
-                        strand=GenomicAlignments::strand(readPairs))
-      seqDat <- granges(seqDat, use.mcols=TRUE)
-      seqDat <- as.data.table(seqDat)
-      setnames(seqDat, c("seqnames"), c("chr"))
-    }
-    else if(grepl(".bed", basename(data), fixed=TRUE)){
-      if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
-      else{
-
-        readBed <- function(data){
-          tryCatch(
-            {
-              seqDat <- fread(data, select=c(1:3,6),
-                              col.names=c("chr", "start", "end", "strand"),
-                              stringsAsFactors=TRUE)
-              return(seqDat)},
-            error = function(cond){
-              seqDat <- fread(data, select=c(1:3),
-                              col.names=c("chr", "start", "end"),
-                              stringsAsFactors=TRUE)
-              return(seqDat)
-            })}
-        seqDat <- readBed(data)
-      }
-    }
-    else if(grepl(".tsv", basename(data), fixed=TRUE)){
-      if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
-      else{
-        seqDat <- fread(data, select=c(1:3),
-                        col.names=c("chr", "start", "end"),
-                        stringsAsFactors=TRUE)}
-      if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
-    }
-    else if(grepl(".rds", basename(data), fixed=TRUE)){
-      seqDat <- as.data.table(readRDS(data))
-      if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
-    }
-  }
-  else{
-    seqDat <- as.data.table(data)
-    if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
-    seqDat$chr <- factor(seqDat$chr)
-  }
-
-  if(!is.null(subSample) & is.numeric(subSample)){
-    message("Subsampling file")
-    subSample <- as.integer(subSample)
-    seqDat <- seqDat[sample(1:nrow(seqDat), min(nrow(seqDat), subSample)),]
-  }
-
-  # Match seqlevelstyle to reference
-  if((sum(grepl("chr", levels(seqDat$chr)))==0 & seqLevelStyle=="UCSC") |
-     (sum(grepl("chr", levels(seqDat$chr)))>0 & seqLevelStyle=="NCBI")){
-    tmpgr <- GRanges(levels(seqDat[["chr"]]),
-                     IRanges(seq_along(levels(seqDat[["chr"]])), width=2L))
-    seqlevelsStyle(tmpgr) <- seqLevelStyle
-    levels(seqDat$chr) <- seqlevels(tmpgr)
-  }
-
-  # Insert ATAC shift
-  if(shift){
-    seqDat[, start:=start+4L]
-    seqDat[, end:=end-4L]
-  }
-  else if(shift){
-    warning("Did not shift as no column named strand was not found")
-  }
-
-  seqDat[, start:=as.integer(start)]
-  seqDat[, end:=as.integer(end)]
-  if("width" %in% colnames(seqDat)) seqDat$width <- NULL
-
-  return(seqDat)
-}
+#'   seqlevelsStyle(genome) <- seqStyle
+#'   peak_seqs <- memes::get_sequence(peaks, genome)
+#'
+#'   # Get the motifs in universal format required by memes
+#'   if(is.null(motifs)){
+#'     if(spec=="Homo sapiens"){
+#'       spec <- "Hsapiens"}
+#'     else if(spec=="Mus musculus"){
+#'       spec <- "Mmusculus"}
+#'
+#'     motifs <- getNonRedundantMotifs("universal", species = spec)
+#'   }
+#'
+#'   # Obtain the positions of motif instances which are later required as input for runATAC
+#'   if(is.null(thresh)) thresh <- 1e-4
+#'   pmoi <- memes::runFimo(peak_seqs,
+#'                   motifs, thresh=thresh,
+#'                   meme_path="/common/meme/bin/",
+#'                   skip_matched_sequence=TRUE)
+#'   pmoi <- pmoi[order(mcols(pmoi)$motif_id, -mcols(pmoi)$score)]
+#'   pmoi <- split(pmoi, pmoi$motif_id)
+#'   if(!is.null(minHits)) pmoi <- pmoi[which(lengths(pmoi)>=minHits)]
+#'   if(!is.null(keepTop)) pmoi <- lapply(split(pmoi, pmoi$motif_id), n=keepTop, FUN=head)
+#'   pmoi <- sort(unlist(GRangesList(pmoi)))
+#'   return(pmoi)
+#' }
+#'
+#' #' @author Emanuel Sonder
+#' .processData <- function(data, readAll=FALSE, shift=FALSE,
+#'                          subSample=NULL, seqLevelStyle="UCSC"){
+#'   if(is.character(data)){
+#'     if(grepl(".bam", basename(data), fixed=TRUE))
+#'     {
+#'       param <- Rsamtools::ScanBamParam(what=c('pos', 'qwidth', 'isize'))
+#'       readPairs <- GenomicAlignments::readGAlignmentPairs(data, param=param)
+#'
+#'       # get fragment coordinates from read pairs
+#'       seqDat <- GRanges(seqnames(readPairs@first),
+#'                         IRanges(start=pmin(GenomicAlignments::start(readPairs@first),
+#'                                            GenomicAlignments::start(readPairs@last)),
+#'                                 end=pmax(GenomicAlignments::end(readPairs@first),
+#'                                          GenomicAlignments::end(readPairs@last))),
+#'                         strand=GenomicAlignments::strand(readPairs))
+#'       seqDat <- granges(seqDat, use.mcols=TRUE)
+#'       seqDat <- as.data.table(seqDat)
+#'       setnames(seqDat, c("seqnames"), c("chr"))
+#'     }
+#'     else if(grepl(".bed", basename(data), fixed=TRUE)){
+#'       if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
+#'       else{
+#'
+#'         readBed <- function(data){
+#'           tryCatch(
+#'             {
+#'               seqDat <- fread(data, select=c(1:3,6),
+#'                               col.names=c("chr", "start", "end", "strand"),
+#'                               stringsAsFactors=TRUE)
+#'               return(seqDat)},
+#'             error = function(cond){
+#'               seqDat <- fread(data, select=c(1:3),
+#'                               col.names=c("chr", "start", "end"),
+#'                               stringsAsFactors=TRUE)
+#'               return(seqDat)
+#'             })}
+#'         seqDat <- readBed(data)
+#'       }
+#'     }
+#'     else if(grepl(".tsv", basename(data), fixed=TRUE)){
+#'       if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
+#'       else{
+#'         seqDat <- fread(data, select=c(1:3),
+#'                         col.names=c("chr", "start", "end"),
+#'                         stringsAsFactors=TRUE)}
+#'       if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
+#'     }
+#'     else if(grepl(".rds", basename(data), fixed=TRUE)){
+#'       seqDat <- as.data.table(readRDS(data))
+#'       if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
+#'     }
+#'   }
+#'   else{
+#'     seqDat <- as.data.table(data)
+#'     if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
+#'     seqDat$chr <- factor(seqDat$chr)
+#'   }
+#'
+#'   if(!is.null(subSample) & is.numeric(subSample)){
+#'     message("Subsampling file")
+#'     subSample <- as.integer(subSample)
+#'     seqDat <- seqDat[sample(1:nrow(seqDat), min(nrow(seqDat), subSample)),]
+#'   }
+#'
+#'   # Match seqlevelstyle to reference
+#'   if((sum(grepl("chr", levels(seqDat$chr)))==0 & seqLevelStyle=="UCSC") |
+#'      (sum(grepl("chr", levels(seqDat$chr)))>0 & seqLevelStyle=="NCBI")){
+#'     tmpgr <- GRanges(levels(seqDat[["chr"]]),
+#'                      IRanges(seq_along(levels(seqDat[["chr"]])), width=2L))
+#'     seqlevelsStyle(tmpgr) <- seqLevelStyle
+#'     levels(seqDat$chr) <- seqlevels(tmpgr)
+#'   }
+#'
+#'   # Insert ATAC shift
+#'   if(shift){
+#'     seqDat[, start:=start+4L]
+#'     seqDat[, end:=end-4L]
+#'   }
+#'   else if(shift){
+#'     warning("Did not shift as no column named strand was not found")
+#'   }
+#'
+#'   seqDat[, start:=as.integer(start)]
+#'   seqDat[, end:=as.integer(end)]
+#'   if("width" %in% colnames(seqDat)) seqDat$width <- NULL
+#'
+#'   return(seqDat)
+#' }

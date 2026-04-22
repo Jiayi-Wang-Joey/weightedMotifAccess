@@ -265,7 +265,7 @@
 }
 
 
-#' @title Count Fragments in Peak Regions
+#' @title Count (Weighted) Fragments in Peak Regions
 #'
 #' @description
 #' Count the number of fragments in each peak region, with or without
@@ -286,76 +286,94 @@
 #' @param smooth Logical; whether to apply smoothing on fragment weights.
 #' @param aRange Numeric; bandwidth for smoothing.
 #' @param ... Additional arguments passed to internal weighting functions.
-#'
+#' @author Jiayi Wang
 #' @return A \code{\link[SummarizedExperiment]{SummarizedExperiment}} object
 #' containing assays for different fragment types.
-#'
-#' @import fields BSgenome data.table
+#' @import SummarizedExperiment
+#' @importFrom fields smooth.2d
+#' @importFrom data.table as.data.table
 #' @importFrom GenomicRanges findOverlaps GPos resize GRanges
+#' @importFrom Rsamtools FaFile
+#'
 #' @export
 #'
-getCounts <- function (files,
+getWeightedCounts <- function(
+        files,
     atacFrag,
     ranges,
     genome,
     species,
     fragWeight = FALSE,
     peakWeight = FALSE,
-    resize = TRUE,
+    resize = FALSE,
     width = 300,
     nWidthBins = 30,
     nGCBins = 10,
-    cuts = c(0,120,300,500),
+    cuts = c(0, 120, 300, 500),
     minFrag = 30,
     maxFrag = 3000,
     smooth = FALSE,
     aRange = 1.5,
-    ...) {
-    if (!is(genome, "BSgenome")) {
-        stop("The 'genome' argument must be a valid BSgenome object.")
+    coerceToGenome = TRUE,
+    ...
+) {
+    if (!inherits(genome, c("BSgenome", "FaFile"))) {
+        stop(
+            "The 'genome' argument must be either a BSgenome object or an Rsamtools::FaFile."
+        )
     }
-    # get fragments ranges
-    if (is.null(atacFrag)) atacFrag <- .importFragments(files)
 
-    # sanity check
+    if (is.null(atacFrag)) {
+        atacFrag <- .importFragments(files)
+    }
+
     .sanityCheck(atacFrag, ranges)
 
-    # standard chromosomes
-    ranges <- .standardChromosomes(ranges, species = species)
+    ranges <- .standardChromosomes(
+        ranges,
+        species = species,
+        genome = genome,
+        coerceToGenome = coerceToGenome
+    )
+
     atacFrag <- lapply(atacFrag, function(dt) {
         gr <- dtToGr(dt)
-        gr <- .standardChromosomes(gr, species = species)
+        gr <- .standardChromosomes(
+            gr,
+            species = species,
+            genome = genome,
+            coerceToGenome = coerceToGenome
+        )
         as.data.table(gr)
     })
 
-    # filter too short or too long fragments
     atacFrag <- .filterFrags(atacFrag, min = minFrag, max = maxFrag)
 
-    # match seqLevels
     res <- .matchSeqlevels(atacFrag, ranges)
     atacFrag <- res$atacFrag
     ranges <- res$ranges
 
+    if (resize) {
+        ranges <- .resizeRanges(peakRanges = ranges, width = width)
+    }
 
-    if (resize) ranges <- .resizeRanges(peakRanges = ranges, width = width)
+    asy <- .getOverlapCounts(
+        peakRanges = ranges,
+        atacFrag = atacFrag,
+        fragWeight = fragWeight,
+        cuts = cuts,
+        genome = genome,
+        smooth = smooth,
+        aRange = aRange,
+        species = species,
+        nWidthBins = nWidthBins,
+        nGCBins = nGCBins,
+        peakWeight = peakWeight,
+        ...
+    )
 
-    asy <- .getOverlapCounts(peakRanges = ranges,
-            atacFrag = atacFrag,
-            fragWeight = fragWeight,
-            cuts = cuts,
-            genome = genome,
-            smooth = smooth,
-            aRange = aRange,
-            species = species,
-            nWidthBins = nWidthBins,
-            nGCBins = nGCBins,
-            peakWeight = peakWeight,
-            ...)
-
-
-    #SummarizedExperiment(assays = asy, rowRanges = ranges)
+    asy
 }
-
 
 
 
