@@ -37,12 +37,47 @@ getInteractionsDeviations <- function(se, annotation, bait, minCount=20, ...){
   totBait <- as.integer(tot[bait])
   expected <- totBait*tot/nrow(annotation)
   rowData(dev)$overlap.percentOfBait <- round(100*(ov/totBait),2)
-  jac <- colOverlaps(annotation[,colnames(moi2)], annotation[,bait],
-                     metric="jaccard")
+  jac <- .colOverlaps(annotation[,colnames(moi2)], annotation[,bait],
+                      metric="jaccard")
   rowData(dev)$overlap.jaccard <- as.numeric(jac)
   rowData(dev)$overlap.log2Enr <- log2(ov/expected)
   rowData(dev)$isBait <- row.names(dev)==bait
   dev
+}
+
+#' .colOverlaps
+#' 
+#' Computes pairwise overlap metric between columns (taken from epiwraps)
+#'
+#' @param x A logical matrix.
+#' @param y An optional nother logical matrix or vector. If NULL (default), 
+#'   overlaps are computed between columns of `x`.
+#' @param metric Either 'overlap', 'jaccard', or 'overlapCoef'.
+#'
+#' @returns A matrix of pairwise metric values.
+.colOverlaps <- function(x, y=NULL, metric=c("overlap","jaccard","overlapCoef")){
+  metric <- match.arg(metric)
+  x <- as(x, "lMatrix")
+  ys <- xs <- colSums(x)
+  if(is.null(y)){
+    y <- x
+  }else{
+    if(is.vector(y)) y <- as.matrix(y)
+    y <- as(y, "lMatrix")
+    ys <- colSums(y)
+  }
+  intersections <- t(x) %*% as.matrix(y)
+  if(metric=="overlap"){
+    out <- intersections
+  }else if(metric=="overlapCoef"){
+    minSize <- outer(xs, ys, "min")
+    out <- intersections/minSize
+  }else{
+    unions <- outer(xs, ys, "+") - intersections
+    out <- intersections/unions
+  }
+  if(is(out, "dgeMatrix")) out <- as.matrix(out)
+  out
 }
 
 
@@ -61,9 +96,10 @@ getInteractionsDeviations <- function(se, annotation, bait, minCount=20, ...){
 #' @param global Logical; whether to test the contrasts globally, rather than
 #'   individually. Has no effect when there is a single contrast 
 #'   (i.e. two-group comparison).
-#' @param weights Logical; whether to use weights (recommended). Can also be
-#'   a function that will convert the number of overlapping sites into weights 
-#'   (default `sqrt`).
+#' @param weights The weights to use, either 'fixed' (uses the sqrt number of 
+#'   sites), 'trend' (default; uses the trend over the number of sites), or 
+#'   'none' (no weights; not recommended). We recommend 'trend' if the number
+#'   of motifs is sufficiently large (e.g. >100).
 #' @param useAssay Which assay to use. We recommend setting 'adjZ' (default),
 #'   which uses z-scores but corrects the scale of the bait's z-scores to its
 #'   expectation for the intersection size.
@@ -80,7 +116,7 @@ getInteractionsDeviations <- function(se, annotation, bait, minCount=20, ...){
 #' dev$group <- rep(LETTERS[1:2], each=5)
 #' discoverMotifInteractions(dev, "group")
 discoverMotifInteractions <- function(dev, group, covar=c(), global=FALSE,
-                                      weights=TRUE,
+                                      weights=c("trend","fixed","none"),
                                       useAssay=c("adjZ","deviations","z")){
   stopifnot(inherits(dev, "SummarizedExperiment"))
   stopifnot(sum(rowData(dev)$isBait)==1)
@@ -105,16 +141,15 @@ discoverMotifInteractions <- function(dev, group, covar=c(), global=FALSE,
   mm <- model.matrix(as.formula(formula), data=cd)
   colnames(mm) <- gsub("combined","",colnames(mm))
   e <- cbind(e1,e2)
-  w <- NULL
-  if(!isFALSE(weights)){
-    if(isTRUE(weights)) weights <- sqrt
-    if(!is.function(weights))
-      stop("`weights` should be TRUE, FALSE, or a function.")
-    motif_weight <- weights(rowData(dev)$N)
+  if(weights=="fixed"){
+    # use fixed weights
+    motif_weight <- sqrt(rowData(dev)$N)
     w <- matrix(motif_weight[-wBait], nrow=nrow(e), ncol=ncol(e))
     w[, seq_len(ncol(dev))] <- motif_weight[wBait]
+    fit <- lmFit(e, mm, weights=w)
+  }else{
+    fit <- lmFit(e, mm)
   }
-  fit <- lmFit(e, mm, weights=w)
   refG <- levels(cd[[group]])[1]
   grs <- levels(cd[[group]])[-1]
   names(grs) <- paste0(grs,"-",refG)
@@ -123,7 +158,13 @@ discoverMotifInteractions <- function(dev, group, covar=c(), global=FALSE,
            refG, "_TRUE - ", refG, "_FALSE)")
   })
   cont_matrix <- makeContrasts(contrasts=contrast_strings, levels=mm)
-  fit <- eBayes(contrasts.fit(fit, cont_matrix))
+  if(weights=="trend"){
+    # let limma figure out the prior trend
+    motif_weight <- sqrt(rowData(dev)$N[-wBait])
+    fit <- eBayes(contrasts.fit(fit, cont_matrix), trend=motif_weight)
+  }else{
+    fit <- eBayes(contrasts.fit(fit, cont_matrix))
+  }
   if(!isTRUE(global)){
     res <- dplyr::bind_rows(lapply(setNames(names(grs),names(grs)), \(co){
       res <- as.data.frame(topTable(fit, coef=co, number=Inf))
