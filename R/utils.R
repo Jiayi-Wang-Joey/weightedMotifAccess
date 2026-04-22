@@ -131,7 +131,7 @@
 #' Convert a data table to GenomicRange object
 #' @author Emanuel Sonder
 
-dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
+.dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
                     strandCol="strand", stranded=FALSE, addMetaCols=TRUE){
   dt <- copy(dt)
   setnames(dt, seqCol, "seqnames", skip_absent = TRUE)
@@ -289,6 +289,7 @@ dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
 #' @import Matrix
 #' @importFrom GenomicRanges findOverlaps GRanges GRangesList
 #' @importClassesFrom GenomicRanges GRanges
+#' @importFrom GenomeInfoDb seqlevelsStyle keepStandardChromosomes seqlevels
 #' @importFrom BiocParallel bplapply MulticoreParam SerialParam SnowParam
 #' @importFrom GenomicAlignments readGAlignmentPairs start end strand
 #' @importFrom Rsamtools ScanBamParam
