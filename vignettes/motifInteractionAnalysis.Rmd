@@ -178,7 +178,8 @@ more slowly.
 In contrast, the putative interaction (antagonism) with CTCFL shows an 
 inconsistent distance pattern: CTCFL appears to suppress the effect of GCR 
 activation both when close or distant to the GCR motif, but not in the middle 
-bin of 220-299bp. This makes it a less likely candidate interactor.
+bin of 220-299bp. This makes the putative interaction less likely to be a 
+direct physical interaction, but does not exclude an indirect interaction.
 
 
 ## Session info
