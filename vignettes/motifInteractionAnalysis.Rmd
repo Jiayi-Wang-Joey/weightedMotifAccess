@@ -1,0 +1,188 @@
+---
+title: "Motif interaction analysis"
+author: 
+  - name: Pierre-Luc Germain
+    affiliation:
+    - ETH Zurich, Switzerland
+    email: pierre-luc.germain@hest.ethz.ch
+date: "`r doc_date()`"
+output: 
+  BiocStyle::html_document:
+    self_contained: yes
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_folding: show
+package: "`r pkg_ver('betterChromVAR')`"
+vignette: >
+  %\VignetteIndexEntry{Motif interaction analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}  
+---
+
+## Introduction
+
+Motif deviations, as for instance computed by the `r Biocpkg("betterChromVAR")`
+package, quantify the relative accessibility of given DNA motifs across 
+samples/cells. These motif scores are then use to inference the relative 
+activity of the corresponding TFs, and can then be used for differential 
+analysis across conditions. If you are not familiar with motif deviations, it 
+is recommended that you read up on it, for instance the documentation of the 
+`r Biocpkg("chromVAR")` and/or `r Biocpkg("betterChromVAR")` packages.
+
+In this vignette, we explore the use of these methods to identify synergies 
+(or antagonisms) between TFs. As a example dataset, we use a subset of an 
+ATAC-seq dataset of A549 cells upon ligand-based activation of the 
+glucocorticoid receptor (GCR), encoded by the NR3C1 gene.
+
+First, we load the package and the dataset:
+
+```{r}
+devtools::load_all("../")
+#data("NR3C1example.RData")
+load("../data/NR3C1example.RData", verbose=TRUE)
+peakSE
+motifMatches
+```
+
+The `peakSE` object contains ATAC peaks counts for each 6 samples, while the 
+`motifMatches` object indicates which peak matches which of a selection of 29 
+motifs. For discussion about how exactly to generate those kinds of input, see
+the `r Biocpkg("betterChromVAR")` package.
+
+## Standard differential motif accessibility using betterChromVAR
+
+First, we illustrate the effect of the treatment of GCR motif accessibility by
+computing standard motif deviations, followed by differential testing
+^[If you are not familiar with such differential testing, see the `r Biocpkg("limma")` documentation.]:
+
+```{r}
+library(betterChromVAR)
+dev <- betterChromVAR(peakSE, motifMatches)
+dev
+```
+```{r}
+library(limma)
+design <- model.matrix(~dev$group)
+fit <- eBayes(lmFit(assay(dev, "z"), design))
+DAA <-as.data.frame(topTable(fit))
+DAA
+```
+
+The results show GCR as the most differentially-accessible motif between the 
+conditions, as expected, closely followed by the mineralocorticoid receptor 
+(MCR), which has a motif very similar to GCR. We could also look at the pattern
+across samples for top motifs:
+
+```{r}
+library(sechm)
+sechm(dev, head(row.names(DAA)), gaps_at="group")
+```
+
+
+## Testing for motif interactions
+
+Having identified GCR as the main motif differentially-accessible across 
+conditions, we now want to know whether these differences are particularly at 
+sites that have both GCR and some other motif (or the oppsite, i.e. particularly
+at sites that do not harbour the other motif). Computationally speaking, we 
+want to test whether the deviation differences at intersecting sites (i.e. 
+sites that harbour both motifs) are significantly larger (or smaller) than at 
+GCR sites in general.
+
+To this end, we first compute deviations at the intersection between GCR and 
+each other motif:
+
+```{r}
+# get deviations for motif intersections:
+idev <- getInteractionsDeviations(peakSE, motifMatches, bait="GCR", minCount = 10)
+```
+
+Next, we test for a significant interaction with respect to the bait motif:
+
+```{r}
+res <- discoverMotifInteractions(idev, "group")
+head(res)
+```
+
+We could plot these results in a kind of volcano plot:
+
+```{r}
+library(ggplot2)
+ggplot(res, aes(difference, -log10(adj.P.Val), size=overlap.N, label=motif)) + 
+  geom_text()
+```
+
+The `difference` column indicate by how much the response in the intersection 
+(e.g. in sites that have both the GCR and CTCFL motifs) differs from that in
+GCR sites more generally. For example, since we established earlier that the 
+treatment increases accessibility of GCR sites, and the difference in the 
+interaction with CTCFL is negative, we can conclude that CTCFL appears to 
+prevent GCR from having a positive impact. In contrast, sites that have the JUND
+motif (in addition to GCR) appear to increase in accessibility more than those 
+that do not, in line with the known interaction between GCR and JUN/FOS family 
+members.
+
+## Investigating motif interactions through distance decay patterns
+
+Next, we will explore a bit more in depth those candidate interactions by 
+investigating their dependence on the distance between the two motifs. To this
+end, the `exploreMotifInteraction` function will produce deviations for the 
+sites harboring only GCR, only the candidate partner, or both at given distance
+intervals of each other.
+
+```{r, fig.width=10, fig.height=4}
+# we load the genome
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+# we precompute the betterChromVAR background to save computing time in case
+# we check many interactions:
+bg <- computeBackgrounds(peakSE, getBackgroundBins(peakSE))
+
+# We look at two potential partners of GCR; for each, we compute deviations for
+# different subsets of sites, and then melt these results into a data.frame for 
+# plotting
+dd <- lapply(c("JUND", "CTCFL"), \(mo){
+  didev <- exploreMotifInteraction(peakSE, motifs[c("GCR", mo)], bg = bg,
+                                   genome=BSgenome.Hsapiens.UCSC.hg38)
+  d <- meltSE(dev, row.names(didev))
+  d$feature <- factor(d$feature, row.names(didev))
+  d$query <- mo
+  d
+})
+dd <- dplyr::bind_rows(dd)
+dd$query <- factor(dd$query, unique(dd$query))
+ggplot(dd, aes(feature, norm)) + geom_hline(yintercept=0, linetype="dashed") + 
+  geom_boxplot(aes(fill=group)) + facet_wrap(~query, scale="free") + 
+  theme_bw() + labs(x="Site type", y="Adjusted z-scores") + 
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+```
+On the left of the first panel, we see the change in deviation upon 
+ligand-based GCR activation (i.e. NR3C1 group vs CTRL) in sites harboring the 
+GCR motif (independently of JUND status). Beside it, we see the same in sites 
+harboring the JUND motif (independently of whether they also harbor a GCR motif)
+-- and we can observe an absence of difference. Next, we see GCR sites that are
+negative for JUND (which show a smaller impact that GCR sites more generally),
+followed by JUND sites negative for GCR. Finally, we see sites harboring both
+motifs, at difference ranges of distance from each other. The exact distances
+represent quantiles (so that each distance bin is equally populated) up to a 
+maximum distance specified by the user.
+
+We see that when site have GCR and JUND motifs very close to each other, the 
+difference in deviation is larger (i.e. the effect of GCR activation on 
+accessibility is stronger), and that this decays with distance, as we would 
+expect of a bona fide interaction. If the interaction is a physical interaction 
+between the TFs, we would expect this to decay rapidly, otherwise it can decay
+more slowly.
+
+In contrast, the putative interaction (antagonism) with CTCFL shows an 
+inconsistent distance pattern: CTCFL appears to suppress the effect of GCR 
+activation both when close or distant to the GCR motif, but not in the middle 
+bin of 220-299bp. This makes it a less likely candidate interactor.
+
+
+## Session info
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
