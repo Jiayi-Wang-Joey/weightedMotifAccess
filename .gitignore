@@ -52,5 +52,4 @@ R/arch/**
 .gitignore
 .Rbuildignore
 WeightInsertModels.BiocCheck/
-vignettes/
 .gitignore
