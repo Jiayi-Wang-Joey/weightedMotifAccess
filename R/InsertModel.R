@@ -4,8 +4,8 @@
 #'   and samples as columns.
 #' @param annotations A matrix of motif annotations, with peaks as rows and
 #'   motifs as columns.
-#' @param bgcounts A matrix of background-weighted counts, with peaks as rows
-#'   and samples as columns.
+#' @param bgcounts A summarizedExperiment object containing an assay with of background-weighted counts ('counts'), with peaks as rows
+#'   and samples as columns. Additionally needs to contain GC content (and optional fragment length information) in the rowData.
 #' @param bg An optional `bcvBackground` object. Either `bg` or `bgcounts` must
 #'   be given.
 #'
@@ -17,6 +17,12 @@
 computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NULL){
   stopifnot(!is.null(bg) || !is.null(bgcounts))
   if(is.null(bg)){
+    # TODO: filter bgcounts for zero rowsums
+    # TODO: filter motif match matrix the same
+    zeroPeaks <- which(rowSums(assay(bgcounts, "counts"))==0)
+    bgcounts <- bgcounts[!zeroPeaks,]
+    annotations <- annotations[!zeroPeaks,]
+
     bg <- computeBackgrounds(bgcounts, getBackgroundBins(bgcounts))
   }else if(length(bg@depth)==0 || length(bg@expectation)==0){
     stop("Incomplete background; please run computeBackgrounds() first.")
@@ -382,6 +388,7 @@ getInsertionProfiles <- function(atacData,
 getWeightedInsertions <- function(atacFrag, 
                                   motifRanges,
                                   peakRanges,
+                                  genome=BSgenome.Hsapiens.UCSC.hg38,
                                   ...){
 
   peakRanges <- sort(peakRanges)   
@@ -402,24 +409,33 @@ getWeightedInsertions <- function(atacFrag,
   counts <- lapply(counts, Matrix::Matrix, nrow=1)
   counts <- Reduce("rbind", counts[-1], counts[[1]])
   rownames(counts) <- names(peakCounts)
-  colnames(counts) <- names(peakCounts[[1]])
+  colnames(counts) <- colnames(peakCounts[[1]])
   
   # get weighted insertions of peaks
   insPeaks <-  getInsertionProfiles(atacData=atacFrag, motifRanges=peakRanges, ...)
   bgCounts <- insPeaks$insertion_weighted_counts
+  zeroPeaks <- setdiff(1:length(peakRanges), bgCounts$motif_match_id)
+  bgCounts <- rbind(bgCounts, data.table(motif_match_id=rep(zeroPeaks, each=ncol(counts)),
+                                         sample=rep(colnames(counts), each=length(zeroPeaks)),
+                                         w_inserts=0),fill=TRUE)
   bgCounts <- dcast(bgCounts, motif_match_id ~ sample, value.var="w_inserts", fill=0, 
                     fun.aggregate=sum, drop=FALSE)
+  setorder(bgCounts, motif_match_id)
   bgCounts$motif_match_id <- NULL
 
   # TODO: switch to the use of .convertMatrix to avoid conversion to non-sparse (although in bulk that matrix will usually not be sparese)
   bgCounts <- Matrix::Matrix(as.matrix(bgCounts))
 
-  insCounts <- list(counts=counts, bgCounts=bgCounts, bgPeakProfile=insPeaks$insertion_profile)
+  peakRanges <- .getGCContent(peakRanges, genome=genome)
+  # TODO: add median/mean FL bias to rowData
+  bgCounts <- SummarizedExperiment(assays=list(counts=bgCounts),
+                                   rowRanges=peakRanges,
+                                   metadata=list(bgPeakProfile=insPeaks$insertion_profile))
+
+  insCounts <- list(counts=counts, bgcounts=bgCounts, bgPeakProfile=insPeaks$insertion_profile)
   if(!is.null(insMot$insertion_profile)){
     insCounts$insertion_profiles <- insMot$insertion_profiles
   }
-
-  # TODO: create SE and add biases (GC, fragment length to rowData)
 
   return(insCounts)
 }
