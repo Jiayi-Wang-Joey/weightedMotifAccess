@@ -168,7 +168,8 @@
 }
 
 .processData <- function(data, readAll=FALSE, shift=FALSE,
-                         subSample=NULL, seqLevelStyle="UCSC"){
+                         subSample=NULL, seqLevelStyle="UCSC",
+                         minFrag=30, maxFrag=3000){
   if(is.character(data)){
     if(grepl(".bam", basename(data), fixed=TRUE))
     {
@@ -251,6 +252,7 @@
 
   seqDat[, start:=as.integer(start)]
   seqDat[, end:=as.integer(end)]
+  seqDat <- subset(seqDat, end-start+1>=minFrag & end-start+1<=maxFrag)
   if("width" %in% colnames(seqDat)) seqDat$width <- NULL
 
   return(seqDat)
