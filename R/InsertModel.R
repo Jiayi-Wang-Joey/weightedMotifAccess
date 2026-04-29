@@ -17,11 +17,9 @@
 computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NULL){
   stopifnot(!is.null(bg) || !is.null(bgcounts))
   if(is.null(bg)){
-    # TODO: filter bgcounts for zero rowsums
-    # TODO: filter motif match matrix the same
-    zeroPeaks <- which(rowSums(assay(bgcounts, "counts"))==0)
-    bgcounts <- bgcounts[!zeroPeaks,]
-    annotations <- annotations[!zeroPeaks,]
+    nonZeroPeaks <- which(rowSums(assay(bgcounts, "weighted_counts"))>0)
+    bgcounts <- bgcounts[nonZeroPeaks,]
+    annotations <- annotations[nonZeroPeaks,]
 
     bg <- computeBackgrounds(bgcounts, getBackgroundBins(bgcounts))
   }else if(length(bg@depth)==0 || length(bg@expectation)==0){
@@ -390,8 +388,9 @@ getInsertionProfiles <- function(atacData,
   return(res)
 }
 
+# todo add BPPARAM argument
 getWeightedInsertions <- function(atacData, 
-                                  peakRanges
+                                  peakRanges,
                                   motifRanges,
                                   genome,
                                   resize=FALSE,
@@ -445,10 +444,21 @@ getWeightedInsertions <- function(atacData,
   bgCounts <- Matrix::Matrix(as.matrix(bgCounts))
 
   peakRanges <- .getGCContent(peakRanges, genome=genome)
-  # TODO: add median/mean FL bias to rowData of bgCounts
+  peakRanges$bias <- peakRanges$GC_content
   bgCounts <- SummarizedExperiment(assays=list(weighted_counts=bgCounts),
                                    rowRanges=peakRanges,
                                    metadata=list(bgPeakProfile=insPeaks$insertion_profile))
+
+  # add flbias to rowData of bgCounts
+  atacData <- .processData(atacData, minFrag=minFrag, maxFrag=maxFrag, seqLevelStyle=seqLevelStyle)
+  atacData[,width:=end-start+1L]
+  peakFragWidths <- genomicRangesMapping(peakRanges, 
+                                         assayTable=atacData, 
+                                         byCols="sample", 
+                                         scoreCol="width",
+                                         aggregationFun=median, 
+                                         type="any")
+  rowRanges(bgCounts)$flbias <- rowMeans(peakFragWidths)
 
   insCounts <- list(counts=counts, bgcounts=bgCounts, bgPeakProfile=insPeaks$insertion_profile)
   if(!is.null(insMot$insertion_profile)){
