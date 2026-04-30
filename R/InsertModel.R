@@ -21,6 +21,7 @@ computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NUL
     bgcounts <- bgcounts[nonZeroPeaks,]
     annotations <- annotations[nonZeroPeaks,]
 
+    assayNames(bgcounts) <- "counts" # fix for compatibility with computeBackgrounds
     bg <- computeBackgrounds(bgcounts, getBackgroundBins(bgcounts))
   }else if(length(bg@depth)==0 || length(bg@expectation)==0){
     stop("Incomplete background; please run computeBackgrounds() first.")
@@ -130,6 +131,8 @@ computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NUL
 #' Needs to contain a metadata column `motif_id` if insertion profiles should be computed for several motifs separately.
 #' @param margin Margin around motif-matches to consider for computing Tn5 insertion events
 #' @param shift If Tn5 insertion bias should be considered (only if strand column is provided).
+#' @param minFrag Minimum fragment length to be considered for counting insertions. Default is 30bp.
+#' @param maxFrag Maximum fragment length to be considered for counting insertions. Default is
 #' @param calcProfile If insertion footprint profiles should be computed.
 #' @param profiles Pre-computed insertion footprint profile as obtained by this function when running with `calcProfile=TRUE`.
 #' Needs to contain a column with relative positions wrt to the center of the motif match (termed "rel_pos") and weight column (termed "w").
@@ -147,6 +150,7 @@ computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NUL
 #' Assays correspond to the different insertion counts computed, columns will correspond to the samples. If `calcProfile=TRUE` the profiles will be saved in the metadata.
 #' @import data.table
 #' @importFrom GenomicRanges findOverlaps GPos resize GRanges
+#' @importFrom GenomeInfoDb seqlevelsStyle
 #' @importClassesFrom GenomicRanges GRanges
 #' @author Emanuel Sonder
 #' @export
@@ -154,21 +158,21 @@ getInsertionProfiles <- function(atacData,
                                  motifRanges,
                                  margin=200,
                                  shift=FALSE,
+                                 minFrag=30, 
+                                 maxFrag=3000,
                                  calcProfile=TRUE,
                                  profiles=NULL,
                                  symmetric=FALSE,
                                  stranded=FALSE,
                                  subSample=NULL,
                                  simplified=FALSE,
-                                 minFrag=30, 
-                                 maxFrag=3000,
-                                 seqLevelStyle=NULL,
                                  BPPARAM=SerialParam()){
 
   # prep motif data
+  seqLevelStyle <- GenomeInfoDb::seqlevelsStyle(motifRanges)
   motifData <- .processData(motifRanges, shift=FALSE, readAll=FALSE, 
-                            minFrag=minFrag, maxFrag=maxFrag, 
                             seqLevelStyle=seqLevelStyle)
+
   if(!("motif_id" %in% colnames(motifData))){
     message("Assuming all ranges are of the same type")
     motifData[,motif_id:=1L]
@@ -196,7 +200,9 @@ getInsertionProfiles <- function(atacData,
 
   # prep ATAC fragment data
   if(is.data.table(atacData)) atacData <- list(atacData)
-  atacFrag <- lapply(atacData, .processData, shift=shift, subSample=subSample)
+  atacFrag <- lapply(atacData, .processData, shift=shift, subSample=subSample, 
+                     seqLevelStyle=seqLevelStyle, minFrag=minFrag, maxFrag=maxFrag, 
+                     filterLength=TRUE)
   if(!("sample" %in% colnames(atacFrag[[1]]))){
     names(atacFrag) <- names(atacData)
     atacFrag <- rbindlist(atacFrag, idcol="sample")
@@ -388,7 +394,29 @@ getInsertionProfiles <- function(atacData,
   return(res)
 }
 
+#' @name getInsertionProfiles
 # todo add BPPARAM argument
+#' @param atacData Named list of [GenomicRanges::GRanges-class], [data.table::data.table], data.frames or paths to .bed /. bam files
+#' containing ATAC-seq fragment coordinates (i.e. chr/seqnames, start, end and optionally a strand column). List names will be used as sample names.
+#' If a single object is provided and it contains a column named "sample", insertion counts will be computed for each sample separately.
+#' @param peakRanges [GenomicRanges::GRanges-class] object containing coordinates of ATAC-seq peaks. Used for computing background weighted insertion counts.
+#' @param motifRanges [GenomicRanges::GRanges-class] object containing coordinates of motif-matches.
+#' Needs to contain a metadata column `motif_id` if insertion profiles should be computed for several motifs separately.
+#' @param resize If TRUE, peaks will be resized to the provided width around their center. Default is FALSE.
+#' @param width If `resize=TRUE`, width to which peaks will be resized.
+#' @param minFrag Minimum fragment length to be considered for counting insertions. Default is 30bp.
+#' @param maxFrag Maximum fragment length to be considered for counting insertions. Default is
+#' @param shift If Tn5 insertion bias should be considered (only if strand column is provided).
+#' @param ... Additional arguments passed to `getInsertionProfiles()`, e.g. for computing insertion profiles.
+#' @author Emanuel Sonder
+#' @import data.table
+#' @import GenomicRanges 
+#' @import SummarizedExperiment
+#' @import Matrix
+#' @importFrom GenomeInfoDb seqlevelsStyle
+#' @return A list containing the following elements: SummarizedExperiment object with weighted insertion counts for the motif matches (insertioncounts), a SummarizedExperiment object with weighted insertion counts for the peaks (bgcounts) and the insertion profile used for weighting (bgPeakProfile). If `calcProfile=TRUE` also a data.table with the computed insertion profiles per motif is returned (insertion_profiles).
+#'
+#' @export
 getWeightedInsertions <- function(atacData, 
                                   peakRanges,
                                   motifRanges,
@@ -397,21 +425,23 @@ getWeightedInsertions <- function(atacData,
                                   width=300,
                                   minFrag=30, 
                                   maxFrag=3000,
-                                  nWidthBins=30,
+                                  shift=FALSE,
                                   ...){
                                     
   seqLevelStyle <- GenomeInfoDb::seqlevelsStyle(genome)
   if(resize){
     peakRanges <- .resizeRanges(peakRanges=peakRanges, width=width)
   }
-  peakRanges <- .standardChromosomes(peakRanges, species=species,
-                                     genome=genome, coerceToGenome=TRUE)
+  #peakRanges <- .standardChromosomes(peakRanges, species=species,
+  #                                   genome=genome, coerceToGenome=TRUE)
+  #motifRanges <- .standardChromosomes(motifRanges, species=species,
+  #                                   genome=genome, coerceToGenome=TRUE)
   peakRanges <- sort(peakRanges)   
   peakRanges$peak_id <- 1:length(peakRanges)                              
 
   # get weighted insertion counts around motif matches
-  insMot <-  getInsertionProfiles(atacData=atacFrag, motifRanges=motifRanges,
-                                  minFrag=minFrag, maxFrag=maxFrag, seqLevelStyle=seqLevelStyle, ...)
+  insMot <-  getInsertionProfiles(atacData=atacData, motifRanges=motifRanges,
+                                  minFrag=minFrag, maxFrag=maxFrag, shift=shift, ...)
   
   # aggregate per peak
   peakCounts <- genomicRangesMapping(peakRanges, 
@@ -420,16 +450,18 @@ getWeightedInsertions <- function(atacData,
                                      scoreCol="w_inserts",
                                      aggregationFun=max, 
                                      type="within")
+
   counts <- lapply(peakCounts, colSums)
   # TODO: ensure colnames order is preserved across motifs
   counts <- lapply(counts, Matrix::Matrix, nrow=1)
   counts <- Reduce("rbind", counts[-1], counts[[1]])
   rownames(counts) <- names(peakCounts)
   colnames(counts) <- colnames(peakCounts[[1]])
+  print(dim(counts))
   
   # get weighted insertions of peaks
-  insPeaks <-  getInsertionProfiles(atacData=atacFrag, motifRanges=peakRanges, profiles=NULL, 
-                                    seqLevelStyle=seqLevelStyle, minFrag=minFrag, maxFrag=maxFrag, ...)
+  insPeaks <-  getInsertionProfiles(atacData=atacData, motifRanges=peakRanges, profiles=NULL, 
+                                    minFrag=minFrag, maxFrag=maxFrag, shift=shift, ...)
   bgCounts <- insPeaks$insertion_weighted_counts
   zeroPeaks <- setdiff(1:length(peakRanges), bgCounts$motif_match_id)
   bgCounts <- rbind(bgCounts, data.table(motif_match_id=rep(zeroPeaks, each=ncol(counts)),
@@ -444,23 +476,35 @@ getWeightedInsertions <- function(atacData,
   bgCounts <- Matrix::Matrix(as.matrix(bgCounts))
 
   peakRanges <- .getGCContent(peakRanges, genome=genome)
-  peakRanges$bias <- peakRanges$GC_content
+  peakRanges$bias <- peakRanges$gc
+  peakRanges$gc <- NULL
   bgCounts <- SummarizedExperiment(assays=list(weighted_counts=bgCounts),
                                    rowRanges=peakRanges,
                                    metadata=list(bgPeakProfile=insPeaks$insertion_profile))
 
   # add flbias to rowData of bgCounts
-  atacData <- .processData(atacData, minFrag=minFrag, maxFrag=maxFrag, seqLevelStyle=seqLevelStyle)
-  atacData[,width:=end-start+1L]
+  args <- list(...)
+  if("subSample" %in% names(args)){
+    subSample <- args[["subSample"]]
+  } else {
+    subSample <- NULL
+  }
+  atacData <- lapply(atacData, .processData, minFrag=minFrag, maxFrag=maxFrag, seqLevelStyle=seqLevelStyle, filterLength=TRUE, shift=shift, subSample=subSample)
+  atacData <- rbindlist(atacData, idcol="sample")
+  atacData[,frag_width:=as.integer(end-start+1L)]
   peakFragWidths <- genomicRangesMapping(peakRanges, 
                                          assayTable=atacData, 
                                          byCols="sample", 
-                                         scoreCol="width",
-                                         aggregationFun=median, 
-                                         type="any")
+                                         scoreCol="frag_width",
+                                         aggregationFun=function(x){floor(median(x))}, # get mean fragment width per peak and sample, then get the mean across samples (to avoid bias from different sequencing depth across samples)
+                                         type="any",
+                                         shift=FALSE)
   rowRanges(bgCounts)$flbias <- rowMeans(peakFragWidths)
 
-  insCounts <- list(counts=counts, bgcounts=bgCounts, bgPeakProfile=insPeaks$insertion_profile)
+  counts <- SummarizedExperiment(assays=list(weighted_counts=counts),
+                                   rowData=data.frame(motif_id=rownames(counts)))
+
+  insCounts <- list(insertioncounts=counts, bgcounts=bgCounts, bgPeakProfile=insPeaks$insertion_profile)
   if(!is.null(insMot$insertion_profile)){
     insCounts$insertion_profiles <- insMot$insertion_profiles
   }
