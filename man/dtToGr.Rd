@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils.R
 \name{dtToGr}
 \alias{dtToGr}
-\title{Convert a data.table to a GRanges object}
+\title{dtToGr}
 \usage{
 dtToGr(
   dt,
@@ -14,24 +14,8 @@ dtToGr(
   addMetaCols = TRUE
 )
 }
-\arguments{
-\item{x}{A data.frame or data.table with genomic coordinates.}
-}
-\value{
-A GRanges object.
-}
 \description{
-Convert a data.table to a GRanges object
-}
-\examples{
-library(data.table)
-dt <- data.table(
-    seqnames = c("chr1", "chr1"),
-    start = c(100, 200),
-    end = c(150, 250)
-)
-gr <- dtToGr(dt)
-gr
+Convert a data table to GenomicRange object
 }
 \author{
 Emanuel Sonder
