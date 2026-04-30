@@ -4,7 +4,7 @@
 \alias{.getGCContent}
 \title{getGCcontent}
 \usage{
-.getGCContent(gr, genome, contentOnly = FALSE)
+.getGCContent(gr, genome)
 }
 \arguments{
 \item{gr:}{a GRanges object}

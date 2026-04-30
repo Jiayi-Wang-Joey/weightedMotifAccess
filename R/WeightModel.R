@@ -49,23 +49,24 @@
 #' @import BiocParallel
 #' @importFrom data.table rbindlist as.data.table
 #' @noRd
-
 .getBins <- function(atacFrag,
     nWidthBins = 30,
     nGCBins = 10,
     genome,
-    BPPARAM=BiocParallel::bpparam()) {
+    BPPARAM = BiocParallel::bpparam()) {
+
     print("start binning")
-    fragDts <- BiocParallel::bplapply(atacFrag, BPPARAM=BPPARAM, \(dt){
+    fragDts <- BiocParallel::bplapply(atacFrag, BPPARAM = BPPARAM, \(dt) {
         gr <- dtToGr(dt)
         gr <- .getGCContent(gr, genome = genome)
         dt <- as.data.table(gr)
+        setnames(dt, "fragWidth", "width")
         dt
     })
 
     idCol <- "sample"
     fragDt <- rbindlist(fragDts, idcol=idCol)
-
+    fragDt <- fragDt[!is.na(gc)]
     rm(fragDts)
 
     widthIntervals <- unique(quantile(fragDt$width,
@@ -84,6 +85,41 @@
 
     fragDt
 }
+
+# .getBins <- function(atacFrag,
+#     nWidthBins = 30,
+#     nGCBins = 10,
+#     genome,
+#     BPPARAM=BiocParallel::bpparam()) {
+#     print("start binning")
+#     fragDts <- BiocParallel::bplapply(atacFrag, BPPARAM=BPPARAM, \(dt){
+#         gr <- dtToGr(dt)
+#         gr <- .getGCContent(gr, genome = genome)
+#         dt <- as.data.table(gr)
+#         dt
+#     })
+#
+#     idCol <- "sample"
+#     fragDt <- rbindlist(fragDts, idcol=idCol)
+#
+#     rm(fragDts)
+#
+#     widthIntervals <- unique(quantile(fragDt$width,
+#         probs = seq(0,1,by=1/nWidthBins)))
+#     GCIntervals <-  unique(quantile(fragDt$gc,
+#         probs = seq(0,1,by=1/nGCBins)))
+#
+#
+#     fragDt[,widthBin:=cut(width,
+#         breaks=widthIntervals,
+#         include.lowest=TRUE, labels=FALSE)]
+#     fragDt[,GCBin:=cut(gc,
+#         breaks=GCIntervals,
+#         include.lowest=TRUE, labels=FALSE)]
+#     print("end binning")
+#
+#     fragDt
+# }
 
 
 
@@ -352,6 +388,7 @@ getWeightedCounts <- function(
     res <- .matchSeqlevels(atacFrag, ranges)
     atacFrag <- res$atacFrag
     ranges <- res$ranges
+    seqlengths(ranges) <- seqlengths(genome)[seqlevels(ranges)]
 
     if (resize) {
         ranges <- .resizeRanges(peakRanges = ranges, width = width)

@@ -8,7 +8,6 @@
 #' @param fix: the fixed point for resizing
 #' @return a GRange object with resized ranges
 #' @author Jiayi Wang
-
 .resizeRanges <- function(peakRanges,
     width = 300,
     fix = c("center", "start", "end", "summit"),
@@ -20,16 +19,43 @@
         stop("peakRanges must be a GRanges object")
     }
 
+    if (any(is.na(seqlengths(peakRanges)))) {
+        warning("peakRanges has missing seqlengths; trim() may not work correctly")
+    }
+
     if (fix == "summit") {
         start(peakRanges) <- round(peakRanges$summit - width / 2)
         end(peakRanges) <- start(peakRanges) + width - 1
-        peakRanges <- trim(peakRanges)
     } else {
-        peakRanges <- trim(resize(peakRanges, width = width, fix = fix))
+        peakRanges <- resize(peakRanges, width = width, fix = fix)
     }
 
-    return(peakRanges)
+    peakRanges <- trim(peakRanges)
+    peakRanges <- peakRanges[width(peakRanges) > 0]
+
+    peakRanges
 }
+# .resizeRanges <- function(peakRanges,
+#     width = 300,
+#     fix = c("center", "start", "end", "summit"),
+#     ...) {
+#
+#     fix <- match.arg(fix, choices = c("center", "start", "end", "summit"))
+#
+#     if (!inherits(peakRanges, "GRanges")) {
+#         stop("peakRanges must be a GRanges object")
+#     }
+#
+#     if (fix == "summit") {
+#         start(peakRanges) <- round(peakRanges$summit - width / 2)
+#         end(peakRanges) <- start(peakRanges) + width - 1
+#         peakRanges <- trim(peakRanges)
+#     } else {
+#         peakRanges <- trim(resize(peakRanges, width = width, fix = fix))
+#     }
+#
+#     return(peakRanges)
+# }
 
 #' @title .sanityCheck
 #'
@@ -62,6 +88,26 @@
     }
 
 }
+
+
+# .getGCContent <- function(gr, genome, contentOnly=FALSE) {
+#     # Sanity check
+#     if(is.data.table(gr) | is.data.frame(gr)){
+#       gr <- makeGRangesFromDataFrame(as.data.frame(gr))
+#     }
+#
+#     if (!class(gr) == "GRanges") {
+#         stop("peakRanges must be a GRanges object")
+#     }
+#     seqs <- Biostrings::getSeq(x = genome, gr)
+#     mcols(gr)$gc <- letterFrequency(seqs, "GC",as.prob=TRUE)[,1]
+#     if(contentOnly){
+#       return(gr$gc)}
+#     else{
+#       return(gr)
+#     }
+# }
+
 #' @title getGCcontent
 #'
 #' @description To calculate the GC content of each fragment or peak
@@ -70,23 +116,25 @@
 #' @return a GRanges objects with an additional metadata column gc that contains
 #' GC content
 #' @author  Jiayi Wang
-
-.getGCContent <- function(gr, genome, contentOnly=FALSE) {
-    # Sanity check
-    if(is.data.table(gr) | is.data.frame(gr)){
-      gr <- makeGRangesFromDataFrame(as.data.frame(gr))
+.getGCContent <- function(gr, genome) {
+    if (is.data.table(gr) || is.data.frame(gr)) {
+        gr <- makeGRangesFromDataFrame(as.data.frame(gr))
     }
 
-    if (!class(gr) == "GRanges") {
+    if (!inherits(gr, "GRanges")) {
         stop("peakRanges must be a GRanges object")
     }
-    seqs <- Biostrings::getSeq(x = genome, gr)
-    mcols(gr)$gc <- letterFrequency(seqs, "GC",as.prob=TRUE)[,1]
-    if(contentOnly){
-      return(gr$gc)}
-    else{
-      return(gr)
-    }
+
+    common_seqlevels <- intersect(seqlevels(gr), seqlevels(genome))
+    gr <- keepSeqlevels(gr, common_seqlevels, pruning.mode = "coarse")
+    seqinfo(gr) <- seqinfo(genome)[seqlevels(gr)]
+    mcols(gr)$fragWidth <- mcols(gr)$width
+    mcols(gr)$width <- NULL
+    gr <- trim(gr)
+
+    seqs <- Biostrings::getSeq(genome, gr)
+    mcols(gr)$gc <- letterFrequency(seqs, "GC", as.prob = TRUE)[, 1]
+    gr
 }
 
 #' @title filterFrags
