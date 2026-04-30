@@ -15,16 +15,17 @@
     ...) {
 
     fix <- match.arg(fix, choices = c("center", "start", "end", "summit"))
-    # Sanity check
-    if (!class(peakRanges) == "GRanges") {
+
+    if (!inherits(peakRanges, "GRanges")) {
         stop("peakRanges must be a GRanges object")
     }
 
     if (fix == "summit") {
-        start(peakRanges) <- round(peakRanges$summit-width/2)
-        end(peakRanges) <- start(peakRanges)+width-1
+        start(peakRanges) <- round(peakRanges$summit - width / 2)
+        end(peakRanges) <- start(peakRanges) + width - 1
+        peakRanges <- trim(peakRanges)
     } else {
-        peakRanges <- resize(peakRanges, width = width, fix = fix)
+        peakRanges <- trim(resize(peakRanges, width = width, fix = fix))
     }
 
     return(peakRanges)
@@ -110,19 +111,22 @@
 #' @param atacFrag: a list of data tables containing the fragments information
 #' @param ranges: a genomic object of peaks/motifs
 #' @author Jiayi Wang
-
+#'
 .matchSeqlevels <- function(atacFrag, ranges) {
-    frags <- rbindlist(atacFrag)
-    fragSeq <- unique(frags$seqnames)
-    rangeSeq <- GenomicRanges::seqnames(ranges)
-    common <- intersect(fragSeq,rangeSeq)
+    frags <- data.table::rbindlist(atacFrag)
+    fragSeq <- unique(as.character(frags$seqnames))
+    rangeSeq <- unique(as.character(GenomicRanges::seqnames(ranges)))
+    common <- intersect(fragSeq, rangeSeq)
+
     atacFrag <- lapply(atacFrag, function(frag) {
-        frag <- frag[seqnames %in% common,]
+        frag <- frag[as.character(seqnames) %in% common, ]
         frag$seqnames <- factor(frag$seqnames)
-        frag})
-    ranges <- ranges[seqnames(ranges) %in% common,]
-    # turn seqnames to factor
-    list(atacFrag=atacFrag, ranges=ranges)
+        frag
+    })
+
+    ranges <- ranges[as.character(GenomicRanges::seqnames(ranges)) %in% common]
+
+    list(atacFrag = atacFrag, ranges = ranges)
 }
 
 #' @title dtToGr
@@ -159,11 +163,26 @@
   return(gr)
 }
 
-.standardChromosomes <- function(gr, species) {
-    gr <- keepStandardChromosomes(gr,
-        species=species,
-        pruning.mode="coarse")
-    seqlevelsStyle(gr) <- "UCSC"
+.standardChromosomes <- function(gr, species, genome = NULL, coerceToGenome = TRUE) {
+    gr <- keepStandardChromosomes(
+        gr,
+        species = species,
+        pruning.mode = "coarse"
+    )
+
+    if (isTRUE(coerceToGenome)) {
+        if (is.null(genome)) {
+            stop("`genome` must be provided when `coerceToGenome = TRUE`.")
+        }
+
+        genome_style <- GenomeInfoDb::seqlevelsStyle(genome)
+
+        if (length(genome_style) == 0L) {
+            stop("Could not determine seqlevelsStyle from `genome`.")
+        }
+
+        GenomeInfoDb::seqlevelsStyle(gr) <- genome_style[1]
+    }
     gr
 }
 
