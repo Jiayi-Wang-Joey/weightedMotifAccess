@@ -37,8 +37,7 @@ computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NUL
                               dims=c(nrow(bg@binBinProbs), length(binMap)))
   motifBinCounts <- Matrix::t(annotations) %*% Matrix::t(bin2peakMat)
 
-  motif_bg_exp <- as.matrix(motifBinCounts %*% bg@E)
-
+  motif_bg_exp <- as.matrix(motifBinCounts %*% bg@E) 
   numerator <- counts - motif_bg_exp
 
   # z-scores:
@@ -442,27 +441,36 @@ getWeightedInsertions <- function(atacData,
   # get weighted insertion counts around motif matches
   insMot <-  getInsertionProfiles(atacData=atacData, motifRanges=motifRanges,
                                   minFrag=minFrag, maxFrag=maxFrag, shift=shift, ...)
+  mmCounts <- insMot$insertion_weighted_counts[,.(w_inserts=sum(w_inserts)), 
+                                                  by=.(motif_id, sample, motif_match_id, 
+                                                       chr, start, end)]
   
   # aggregate per peak
+  max0 <- function(x) {
+    if (length(x) == 0) return(0)
+    max(x, na.rm=TRUE)
+  }
   peakCounts <- genomicRangesMapping(peakRanges, 
-                                     assayTable=insMot$insertion_weighted_counts,
+                                     assayTable=mmCounts,
                                      byCols=c("motif_id", "sample"), 
                                      scoreCol="w_inserts",
-                                     aggregationFun=max, 
-                                     type="within")
-
+                                     aggregationFun=max0,
+                                     type="any")
+  samples <- colnames(peakCounts[[1]])
+  samples <- samples[order(samples)]
+  peakCounts <- lapply(peakCounts, function(x){x[,samples]})
   counts <- lapply(peakCounts, colSums)
-  # TODO: ensure colnames order is preserved across motifs
   counts <- lapply(counts, Matrix::Matrix, nrow=1)
   counts <- Reduce("rbind", counts[-1], counts[[1]])
   rownames(counts) <- names(peakCounts)
-  colnames(counts) <- colnames(peakCounts[[1]])
-  print(dim(counts))
+  colnames(counts) <- samples
   
   # get weighted insertions of peaks
   insPeaks <-  getInsertionProfiles(atacData=atacData, motifRanges=peakRanges, profiles=NULL, 
                                     minFrag=minFrag, maxFrag=maxFrag, shift=shift, ...)
-  bgCounts <- insPeaks$insertion_weighted_counts
+  bgCounts <- insPeaks$insertion_weighted_counts[,.(w_inserts=sum(w_inserts)), 
+                                                    by=.(motif_id, sample, motif_match_id, 
+                                                         chr, start, end)]
   zeroPeaks <- setdiff(1:length(peakRanges), bgCounts$motif_match_id)
   bgCounts <- rbind(bgCounts, data.table(motif_match_id=rep(zeroPeaks, each=ncol(counts)),
                                          sample=rep(colnames(counts), each=length(zeroPeaks)),
@@ -471,9 +479,8 @@ getWeightedInsertions <- function(atacData,
                     fun.aggregate=sum, drop=FALSE)
   setorder(bgCounts, motif_match_id)
   bgCounts$motif_match_id <- NULL
-
-  # TODO: switch to the use of .convertMatrix to avoid conversion to non-sparse (although in bulk that matrix will usually not be sparese)
   bgCounts <- Matrix::Matrix(as.matrix(bgCounts))
+  bgCounts <- bgCounts[,samples]
 
   peakRanges <- .getGCContent(peakRanges, genome=genome)
   peakRanges$bias <- peakRanges$gc
@@ -502,11 +509,14 @@ getWeightedInsertions <- function(atacData,
   rowRanges(bgCounts)$flbias <- rowMeans(peakFragWidths)
 
   counts <- SummarizedExperiment(assays=list(weighted_counts=counts),
-                                   rowData=data.frame(motif_id=rownames(counts)))
+                                 rowData=data.frame(motif_id=rownames(counts)),
+                                 colData=data.frame(sample=colnames(counts)))
 
-  insCounts <- list(insertioncounts=counts, bgcounts=bgCounts, bgPeakProfile=insPeaks$insertion_profile)
+  insCounts <- list(insertioncounts=counts, 
+                    bgcounts=bgCounts, 
+                    bgPeakProfile=insPeaks$insertion_profile)
   if(!is.null(insMot$insertion_profile)){
-    insCounts$insertion_profiles <- insMot$insertion_profiles
+    insCounts$insertion_profiles <- insMot$insertion_profile
   }
 
   return(insCounts)
