@@ -52,7 +52,12 @@ R/arch/**
 .gitignore
 .Rbuildignore
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 WeightInsertModels.BiocCheck/
 .gitignore
 >>>>>>> bd86643853d00cb1b15a63a8275a7c15bb7b0a80
+=======
+WeightInsertModels.BiocCheck/
+.gitignore
+>>>>>>> 4fab8bd069063efe319a442df207769548bf1c9a

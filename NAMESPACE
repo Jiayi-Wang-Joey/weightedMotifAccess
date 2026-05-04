@@ -12,6 +12,7 @@ importFrom(GenomicRanges,GRanges)
 importFrom(GenomicRanges,findOverlaps)
 importFrom(GenomicRanges,resize)
 <<<<<<< HEAD
+<<<<<<< HEAD
 importFrom(Matrix,crossprod)
 importFrom(Matrix,sparseMatrix)
 importFrom(SummarizedExperiment,assay)
@@ -24,6 +25,8 @@ importFrom(matrixStats,colMaxs)
 importFrom(matrixStats,colMins)
 importFrom(stats,cov)
 =======
+=======
+>>>>>>> 4fab8bd069063efe319a442df207769548bf1c9a
 importFrom(Rsamtools,FaFile)
 importFrom(SummarizedExperiment,rowRanges)
 importFrom(affy,normalize.loess)
@@ -41,4 +44,7 @@ importFrom(motifmatchr,matchMotifs)
 importFrom(stats,model.matrix)
 importFrom(fields,smooth.2d)
 
+<<<<<<< HEAD
 >>>>>>> bd86643853d00cb1b15a63a8275a7c15bb7b0a80
+=======
+>>>>>>> 4fab8bd069063efe319a442df207769548bf1c9a

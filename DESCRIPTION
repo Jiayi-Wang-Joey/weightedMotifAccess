@@ -1,9 +1,12 @@
 Package: WeightInsertModels
 Title: Differential motif accessibility analysis
 <<<<<<< HEAD
+<<<<<<< HEAD
 Version: 0.0.1
 Authors@R: person("Jiayi", "Wang", email = "jiayi.wang2@uzh", role = c("aut", "cre"))
 =======
+=======
+>>>>>>> 4fab8bd069063efe319a442df207769548bf1c9a
 Version: 0.0.2
 Authors@R: c(
     person("Jiayi", "Wang", email = "jiayi.wang2@uzh.ch", role = c("aut", "cre")),
@@ -12,7 +15,10 @@ Authors@R: c(
            email="pierre-luc.germain@hest.ethz.ch", comment=c(ORCID="0000-0003-3418-4218"))
   )
 
+<<<<<<< HEAD
 >>>>>>> bd86643853d00cb1b15a63a8275a7c15bb7b0a80
+=======
+>>>>>>> 4fab8bd069063efe319a442df207769548bf1c9a
 Description: A longer paragraph (3-4 sentences) describing the biological 
     problem your package solves (ATAC-seq fragment weighting and counting).
 License: Artistic-2.0
@@ -23,7 +29,10 @@ Imports:
     SummarizedExperiment,
     GenomicRanges,
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 4fab8bd069063efe319a442df207769548bf1c9a
     GenomeInfoDb,
     IRanges,
     Rsamtools,
@@ -32,7 +41,10 @@ Imports:
     betterChromVAR,
     motifmatchr,
     universalmotif,
+<<<<<<< HEAD
 >>>>>>> bd86643853d00cb1b15a63a8275a7c15bb7b0a80
+=======
+>>>>>>> 4fab8bd069063efe319a442df207769548bf1c9a
     data.table,
     BiocParallel,
     limma,
@@ -41,9 +53,12 @@ Imports:
     stats,
     BSgenome,
 <<<<<<< HEAD
+<<<<<<< HEAD
     limma,
 =======
 >>>>>>> bd86643853d00cb1b15a63a8275a7c15bb7b0a80
+=======
+>>>>>>> 4fab8bd069063efe319a442df207769548bf1c9a
     Matrix,
     fields,
     affy,
@@ -54,7 +69,10 @@ Suggests:
     testthat (>= 3.0.0),
     BiocStyle
 <<<<<<< HEAD
+<<<<<<< HEAD
 VignetteBuilder: knitr
 =======
 >>>>>>> bd86643853d00cb1b15a63a8275a7c15bb7b0a80
+=======
+>>>>>>> 4fab8bd069063efe319a442df207769548bf1c9a
 RoxygenNote: 7.3.3
