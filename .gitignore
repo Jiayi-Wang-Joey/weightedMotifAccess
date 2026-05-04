@@ -51,3 +51,8 @@ rsconnect/
 R/arch/**
 .gitignore
 .Rbuildignore
+<<<<<<< HEAD
+=======
+WeightInsertModels.BiocCheck/
+.gitignore
+>>>>>>> bd86643853d00cb1b15a63a8275a7c15bb7b0a80

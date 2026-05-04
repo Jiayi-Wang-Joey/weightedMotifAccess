@@ -37,7 +37,8 @@ computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NUL
                               dims=c(nrow(bg@binBinProbs), length(binMap)))
   motifBinCounts <- Matrix::t(annotations) %*% Matrix::t(bin2peakMat)
 
-  motif_bg_exp <- as.matrix(motifBinCounts %*% bg@E) 
+  motif_bg_exp <- as.matrix(motifBinCounts %*% bg@E)
+
   numerator <- counts - motif_bg_exp
 
   # z-scores:
@@ -441,6 +442,7 @@ getWeightedInsertions <- function(atacData,
   # get weighted insertion counts around motif matches
   insMot <-  getInsertionProfiles(atacData=atacData, motifRanges=motifRanges,
                                   minFrag=minFrag, maxFrag=maxFrag, shift=shift, ...)
+
   mmCounts <- insMot$insertion_weighted_counts[,.(w_inserts=sum(w_inserts)), 
                                                   by=.(motif_id, sample, motif_match_id, 
                                                        chr, start, end)]
