@@ -434,10 +434,11 @@ getWeightedInsertions <- function(atacData,
   if(resize){
     peakRanges <- .resizeRanges(peakRanges=peakRanges, width=width)
   }
-  #peakRanges <- .standardChromosomes(peakRanges, species=species,
-  #                                   genome=genome, coerceToGenome=TRUE)
-  #motifRanges <- .standardChromosomes(motifRanges, species=species,
-  #                                   genome=genome, coerceToGenome=TRUE)
+  species <- genome@metadata$organism
+  peakRanges <- .standardChromosomes(peakRanges, species=species,
+                                     genome=genome, coerceToGenome=TRUE)
+  motifRanges <- .standardChromosomes(motifRanges, species=species,
+                                      genome=genome, coerceToGenome=TRUE)
   peakRanges <- sort(peakRanges)   
   peakRanges$peak_id <- 1:length(peakRanges)                              
 
@@ -492,7 +493,9 @@ getWeightedInsertions <- function(atacData,
   bgCounts <- Matrix::Matrix(as.matrix(bgCounts))
   bgCounts <- bgCounts[,samples]
 
-  peakRanges <- .getGCContent(peakRanges, genome=genome)
+  # ensure widths (resizing might have an effect)
+  GenomeInfoDb::seqlengths(peakRanges) <- GenomeInfoDb::seqlengths(genome)[GenomeInfoDb::seqlevels(peakRanges)]
+  peakRanges <- .getGCContent(GenomicRanges::trim(peakRanges), genome=genome)
   peakRanges$bias <- peakRanges$gc
   peakRanges$gc <- NULL
   bgCounts <- SummarizedExperiment(assays=list(weighted_counts=bgCounts),
