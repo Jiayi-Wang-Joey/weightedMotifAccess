@@ -312,8 +312,10 @@ getInsertionProfiles <- function(atacData,
     atacProfiles <- profiles
     if(is.list(atacProfiles)){
       message("Skipped insertion-profiles computation. Using provided pre-computed ones")
-      atacProfiles <- rbindlist(atacProfiles, idcol="motif_id")}
+      atacProfiles <- rbindlist(atacProfiles, idcol="motif_id", use.names=TRUE, fill=TRUE, 
+                                ignore.attr=TRUE)}
   }
+  atacProfiles[,motif_id:=as.character(motif_id)]
 
   # get match scores
   motifScores <- BiocParallel::bpmapply(function(md,af,
@@ -440,6 +442,8 @@ getWeightedInsertions <- function(atacData,
   peakRanges$peak_id <- 1:length(peakRanges)                              
 
   # get weighted insertion counts around motif matches
+  args <- list(...)
+  if("profiles" %in% names(args)) args$calcProfile <- FALSE
   insMot <-  getInsertionProfiles(atacData=atacData, motifRanges=motifRanges,
                                   minFrag=minFrag, maxFrag=maxFrag, shift=shift, ...)
 
@@ -468,8 +472,12 @@ getWeightedInsertions <- function(atacData,
   colnames(counts) <- samples
   
   # get weighted insertions of peaks
-  insPeaks <-  getInsertionProfiles(atacData=atacData, motifRanges=peakRanges, profiles=NULL, 
-                                    minFrag=minFrag, maxFrag=maxFrag, shift=shift, ...)
+  # todo: switch to do.call
+  args$calcProfile <- TRUE
+  args$profiles <- NULL
+  args <- c(list(atacData=atacData, motifRanges=peakRanges, 
+                 minFrag=minFrag, maxFrag=maxFrag, shift=shift), args)
+  insPeaks <-  do.call(getInsertionProfiles, args)
   bgCounts <- insPeaks$insertion_weighted_counts[,.(w_inserts=sum(w_inserts)), 
                                                     by=.(motif_id, sample, motif_match_id, 
                                                          chr, start, end)]
@@ -492,7 +500,6 @@ getWeightedInsertions <- function(atacData,
                                    metadata=list(bgPeakProfile=insPeaks$insertion_profile))
 
   # add flbias to rowData of bgCounts
-  args <- list(...)
   if("subSample" %in% names(args)){
     subSample <- args[["subSample"]]
   } else {
@@ -516,6 +523,7 @@ getWeightedInsertions <- function(atacData,
 
   insCounts <- list(insertioncounts=counts, 
                     bgcounts=bgCounts, 
+                    insraw=insMot,
                     bgPeakProfile=insPeaks$insertion_profile)
   if(!is.null(insMot$insertion_profile)){
     insCounts$insertion_profiles <- insMot$insertion_profile
