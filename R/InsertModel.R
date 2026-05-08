@@ -241,7 +241,7 @@ getInsertionProfiles <- function(atacData,
   }
 
   atacFrag[,chr:=as.integer(factor(chr, levels=chrLevels, ordered=TRUE))]
-  medZero <- function(x, len){ median(c(rep(0L,max(0,len-length(x))),x)) }
+  medZero <- function(x, len){floor(median(c(rep(0L,max(0,len-length(x))),x))) }
   nSamples <- length(unique(atacFrag$sample))
 
   setorder(motifData, chr)
@@ -329,6 +329,7 @@ getInsertionProfiles <- function(atacData,
       atacInserts <- atacInserts[,.(pos_count=.N),
                                  by=.(motif_match_id, motif_id, sample,
                                       rel_pos, type)]
+      if("w_smooth" %in% colnames(profiles)) profiles[,w:=as.numeric(w_smooth)]
       atacInserts <- merge(atacInserts,
                            profiles[,c("rel_pos", "motif_id", "w"),with=FALSE],
                            by.x=c("motif_id","rel_pos"),
@@ -440,7 +441,14 @@ getWeightedInsertions <- function(atacData,
   motifRanges <- .standardChromosomes(motifRanges, species=species,
                                       genome=genome, coerceToGenome=TRUE)
   peakRanges <- sort(peakRanges)   
-  peakRanges$peak_id <- 1:length(peakRanges)                              
+  peakRanges$peak_id <- 1:length(peakRanges)  
+  GenomeInfoDb::seqlengths(peakRanges) <- GenomeInfoDb::seqlengths(genome)[GenomeInfoDb::seqlevels(peakRanges)]
+  peakRanges <- GenomicRanges::trim(peakRanges) 
+  if(sum(width(peakRanges)==0)>0 | resize & sum(width(peakRanges)<width)>0){
+    warning("Some peaks have width 0 or smaller than the provided width after resizing. These will be removed.")
+    peakRanges <- peakRanges[width(peakRanges)>0]
+    if(resize) peakRanges <- peakRanges[width(peakRanges)>=width] 
+  }       
 
   # get weighted insertion counts around motif matches
   args <- list(...)
@@ -494,8 +502,7 @@ getWeightedInsertions <- function(atacData,
   bgCounts <- bgCounts[,samples]
 
   # ensure widths (resizing might have an effect)
-  GenomeInfoDb::seqlengths(peakRanges) <- GenomeInfoDb::seqlengths(genome)[GenomeInfoDb::seqlevels(peakRanges)]
-  peakRanges <- .getGCContent(GenomicRanges::trim(peakRanges), genome=genome)
+  peakRanges <- .getGCContent(peakRanges, genome=genome)
   peakRanges$bias <- peakRanges$gc
   peakRanges$gc <- NULL
   bgCounts <- SummarizedExperiment(assays=list(weighted_counts=bgCounts),
