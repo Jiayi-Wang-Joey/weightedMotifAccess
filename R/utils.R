@@ -301,6 +301,7 @@
   }
 
   # Match seqlevelstyle to reference
+  seqLevelStyle <- seqLevelStyle[1]
   if((sum(grepl("chr", levels(seqDat$chr)))==0 & seqLevelStyle=="UCSC") |
      (sum(grepl("chr", levels(seqDat$chr)))>0 & seqLevelStyle=="NCBI")){
     tmpgr <- GRanges(levels(seqDat[["chr"]]),
@@ -531,7 +532,7 @@ genomicRangesMapping <- function(refRanges,
   {
     setkey(overlapTable, V1, col_width)
     if(!is.null(scoreCol)) setnames(overlapTable, scoreCol, "scoreCol")
-    overlapTable <- split(overlapTable, by=c("col_depth"))
+    overlapTable <- split(overlapTable, by=c("col_depth"), drop=TRUE)
 
     overlapTable <- BiocParallel::bplapply(overlapTable, function(table,
                                                                   scoreCol,

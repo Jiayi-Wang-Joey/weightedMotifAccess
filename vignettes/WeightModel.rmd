@@ -1,0 +1,77 @@
+---
+title: "Weight Model vignette"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{WeightInsertModels}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+## Dependencies
+```{r}
+suppressPackageStartupMessages({
+    #remotes::install_github("Jiayi-Wang-Joey/WeightInsertModels")
+    library(WeightInsertModels)
+    library(rtracklayer)
+    library(BSgenome.Hsapiens.UCSC.hg38)
+})
+```
+
+## Load data
+
+To generate the peak-by-sample count matrix for ATAC-seq data, we need the 
+following inputs:
+
+- peaks (`bed` files, and import as `GRanges`)
+
+```{r}
+peaks <- import("/mnt/plger/plger/DTFAB/fullFrags/GATA2/peaks/GATA2.bed.gz")
+head(peaks)
+```
+
+- ATAC-seq fragments in a list, named by samples
+
+```{r}
+atacFrag <- readRDS("/mnt/plger/jwang/data/dat/00-frg/GATA2.rds")
+names(atacFrag)
+head(atacFrag$CTRL1.bed)
+```
+
+- reference genome as `BSgenome` and species
+
+```{r}
+genome <- BSgenome.Hsapiens.UCSC.hg38
+genome
+
+species <- organism(BSgenome.Hsapiens.UCSC.hg38)
+```
+
+## Get origin (unweighted) count matrix
+
+```{r}
+se <- WeightInsertModels::getWeightedCounts(atacFrag = atacFrag, 
+    ranges = peaks,
+    genome = genome,
+    resize = TRUE,
+    species = species)
+
+assay(se)[1:5,1:5]
+```
+
+## Get fragWeight and peakWeight count matrix
+
+```{r}
+weightSE <- WeightInsertModels::getWeightedCounts(atacFrag = atacFrag, 
+    ranges = peaks,
+    genome = genome,
+    species = species,
+    resize = TRUE,
+    fragWeight = TRUE,
+    peakWeight = TRUE)
+
+assay(weightSE)[1:5,1:5]
+```
+
+
+
+
