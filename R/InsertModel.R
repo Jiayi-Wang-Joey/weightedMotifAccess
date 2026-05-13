@@ -38,6 +38,7 @@ computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NUL
   motifBinCounts <- Matrix::t(annotations) %*% Matrix::t(bin2peakMat)
 
   motif_bg_exp <- as.matrix(motifBinCounts %*% bg@E)
+  counts <- counts/(rowMeans(counts)/rowMeans(motif_bg_exp))
 
   numerator <- counts - motif_bg_exp
 
