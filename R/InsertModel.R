@@ -12,7 +12,7 @@
 #' @returns A list with two matrices, for deviations and z-scores.
 #' @author Pierre-Luc Germain
 #' @importFrom Matrix crossprod t sparseMatrix
-#' @importFrom betterChromVAR computeBackgrounds
+#' @importFrom betterChromVAR computeBackgrounds getBackgroundBins
 #' @export
 computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NULL){
   stopifnot(!is.null(bg) || !is.null(bgcounts))
