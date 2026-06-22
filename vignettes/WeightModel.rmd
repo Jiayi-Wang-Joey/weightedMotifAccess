@@ -2,7 +2,7 @@
 title: "Weight Model vignette"
 output: BiocStyle::html_document
 vignette: >
-  %\VignetteIndexEntry{WeightInsertModels}
+  %\VignetteIndexEntry{weightedMotifAccess}
   %\VignetteEngine{knitr::rmarkdown}
   \usepackage[utf8]{inputenc}
 ---
@@ -10,8 +10,8 @@ vignette: >
 ## Dependencies
 ```{r}
 suppressPackageStartupMessages({
-    #remotes::install_github("Jiayi-Wang-Joey/WeightInsertModels")
-    library(WeightInsertModels)
+    #remotes::install_github("Jiayi-Wang-Joey/weightedMotifAccess")
+    library(weightedMotifAccess)
     library(rtracklayer)
     library(BSgenome.Hsapiens.UCSC.hg38)
 })
@@ -49,7 +49,7 @@ species <- organism(BSgenome.Hsapiens.UCSC.hg38)
 ## Get origin (unweighted) count matrix
 
 ```{r}
-se <- WeightInsertModels::getWeightedCounts(atacFrag = atacFrag, 
+se <- weightedMotifAccess::getWeightedCounts(atacFrag = atacFrag, 
     ranges = peaks,
     genome = genome,
     resize = TRUE,
@@ -61,7 +61,7 @@ assay(se)[1:5,1:5]
 ## Get fragWeight and peakWeight count matrix
 
 ```{r}
-weightSE <- WeightInsertModels::getWeightedCounts(atacFrag = atacFrag, 
+weightSE <- weightedMotifAccess::getWeightedCounts(atacFrag = atacFrag, 
     ranges = peaks,
     genome = genome,
     species = species,

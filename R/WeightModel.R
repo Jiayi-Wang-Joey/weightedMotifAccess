@@ -1,5 +1,5 @@
-#source("~/WeightInsertModels/R/utils.R")
-#source("~/WeightInsertModels/R/peakWeight.R")
+#source("~/weightedMotifAccess/R/utils.R")
+#source("~/weightedMotifAccess/R/peakWeight.R")
 #' @title Define fragment type
 #'
 #' @description To classify fragments into nucleosome-free, mononucleosome,
@@ -57,7 +57,7 @@
 
     print("start binning")
     fragDts <- BiocParallel::bplapply(atacFrag, BPPARAM = BPPARAM, \(dt) {
-        gr <- dtToGr(dt)
+        gr <- .dtToGr(dt)
         gr <- .getGCContent(gr, genome = genome)
         dt <- as.data.table(gr)
         setnames(dt, "fragWidth", "width")
@@ -66,6 +66,7 @@
 
     idCol <- "sample"
     fragDt <- rbindlist(fragDts, idcol=idCol)
+    fragDt[, count := 1L]
     fragDt <- fragDt[!is.na(gc)]
     rm(fragDts)
 
@@ -262,12 +263,13 @@
     atacFrag <- .getType(atacFrag, cuts = cuts)
     fragCounts <- lapply(atacFrag, function(frag) {
         types <- names(frag)[grepl("^type_", names(frag))]
+        if (!fragWeight) frag[, count := 1L]
         if (fragWeight) {
-            frag[,count:=weight*count] # remove
+            frag[,count:=weight*count]
             frag[,(types) := lapply(.SD, function(x) x*weight),
                 .SDcols = types]
         }
-        fragGR <- dtToGr(frag)
+        fragGR <- .dtToGr(frag)
         hits <- findOverlaps(fragGR, peakRanges, type = overlap)
         overlaps <- cbind(frag[queryHits(hits),],
             peaks[subjectHits(hits), c("peakID")])
@@ -373,7 +375,7 @@ getWeightedCounts <- function(
     )
 
     atacFrag <- lapply(atacFrag, function(dt) {
-        gr <- dtToGr(dt)
+        gr <- .dtToGr(dt)
         gr <- .standardChromosomes(
             gr,
             species = species,

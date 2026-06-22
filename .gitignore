@@ -57,3 +57,4 @@ WeightInsertModels.BiocCheck/
 .claude/
 R/._utils.R
 **/._*
+**/**/arch

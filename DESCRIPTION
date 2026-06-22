@@ -1,4 +1,4 @@
-Package: WeightInsertModels
+Package: weightedMotifAccess
 Title: Differential motif accessibility analysis
 Version: 0.0.2
 Authors@R: c(

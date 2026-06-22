@@ -2,7 +2,7 @@
 title: "Insertion Model vignette"
 output: BiocStyle::html_document
 vignette: >
-  %\VignetteIndexEntry{WeightInsertModels}
+  %\VignetteIndexEntry{weightedMotifAccess}
   %\VignetteEngine{knitr::rmarkdown}
   \usepackage[utf8]{inputenc}
 ---
@@ -11,8 +11,8 @@ vignette: >
 ## Dependencies
 ```{r}
 suppressPackageStartupMessages({
-    #remotes::install_github("Jiayi-Wang-Joey/WeightInsertModels")
-    library(WeightInsertModels)
+    #remotes::install_github("Jiayi-Wang-Joey/weightedMotifAccess")
+    library(weightedMotifAccess)
     library(rtracklayer)
     library(BSgenome.Hsapiens.UCSC.hg38)
 })

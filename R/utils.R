@@ -205,7 +205,7 @@
     metaCols <- dt[,setdiff(colnames(dt),
                             c(seqCol, startCol, endCol, strandCol,
                               "seqnames", "chr")),with=FALSE]
-    mcols(gr) <- metaCols
+    if(ncol(metaCols) > 0L) mcols(gr) <- metaCols
   }
 
   return(gr)
