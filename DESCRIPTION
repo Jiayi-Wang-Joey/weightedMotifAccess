@@ -34,10 +34,13 @@ Imports:
     Matrix,
     fields,
     affy,
-    matrixStats
+    matrixStats,
+    epiwraps
 Suggests: 
     knitr,
     rmarkdown,
     testthat (>= 3.0.0),
     BiocStyle
+Remotes:
+    github::ETHZ-INS/epiwraps
 RoxygenNote: 7.3.3
