@@ -1,58 +1,3 @@
-#' computeDeviationsWeighted
-#'
-#' @param counts A matrix of aggregated (weighted) counts, with motifs as rows
-#'   and samples as columns.
-#' @param annotations A matrix of motif annotations, with peaks as rows and
-#'   motifs as columns.
-#' @param bgcounts A summarizedExperiment object containing an assay with of background-weighted counts ('counts'), with peaks as rows
-#'   and samples as columns. Additionally needs to contain GC content (named `bias`) (and optional fragment length information, named `flbias`) in the rowData.
-#' @param bg An optional `bcvBackground` object. Either `bg` or `bgcounts` must
-#'   be given.
-#'
-#' @returns A list with two matrices, for deviations and z-scores.
-#' @author Pierre-Luc Germain
-#' @importFrom Matrix crossprod t sparseMatrix
-#' @importFrom betterChromVAR computeBackgrounds getBackgroundBins
-#' @export
-computeDeviationsWeighted <- function(counts, annotations, bgcounts=NULL, bg=NULL){
-  stopifnot(!is.null(bg) || !is.null(bgcounts))
-  if(is.null(bg)){
-    nonZeroPeaks <- which(rowSums(assay(bgcounts, "weighted_counts"))>0)
-    bgcounts <- bgcounts[nonZeroPeaks,]
-    annotations <- annotations[nonZeroPeaks,]
-
-    assayNames(bgcounts) <- "counts" # fix for compatibility with computeBackgrounds
-    bg <- computeBackgrounds(bgcounts, getBackgroundBins(bgcounts))
-  }else if(length(bg@depth)==0 || length(bg@expectation)==0){
-    stop("Incomplete background; please run computeBackgrounds() first.")
-  }else if(length(bg@depth) != ncol(counts)){
-    stop("The background provided does not seem to fit `counts`")
-  }else if(length(bg@expectation) != nrow(annotations)){
-    stop("The background provided does not seem to fit `annotations`")
-  }
-  stopifnot(nrow(counts)==ncol(annotations))
-
-  binMap <- bg@peak2bin
-  bin2peakMat <- sparseMatrix(i=binMap, j=seq_along(binMap),
-                              dims=c(nrow(bg@binBinProbs), length(binMap)))
-  motifBinCounts <- Matrix::t(annotations) %*% Matrix::t(bin2peakMat)
-
-  motif_bg_exp <- as.matrix(motifBinCounts %*% bg@E)
-  counts <- counts/(rowMeans(counts)/rowMeans(motif_bg_exp))
-
-  numerator <- counts - motif_bg_exp
-
-  # z-scores:
-  z <- numerator / sqrt(pmax(0, as.matrix(motifBinCounts %*% bg@V)))
-
-  # deviations:
-  globalMotifAvg <- as.vector(Matrix::crossprod(annotations, bg@expectation))
-  sf <- bg@depth / sum(bg@expectation)
-  deviations <- numerator/outer(globalMotifAvg, sf)
-
-  list(deviations=deviations, z=z)
-}
-
 .getInsertsPos <- function(atacFrag, motifData, stranded, shiftLeft){
 
   if(stranded){
@@ -159,7 +104,7 @@ getInsertionProfiles <- function(atacData,
                                  motifRanges,
                                  margin=200,
                                  shift=FALSE,
-                                 minFrag=30,
+                                 minFrag=30, 
                                  maxFrag=3000,
                                  calcProfile=TRUE,
                                  profiles=NULL,
@@ -171,7 +116,7 @@ getInsertionProfiles <- function(atacData,
 
   # prep motif data
   seqLevelStyle <- GenomeInfoDb::seqlevelsStyle(motifRanges)
-  motifData <- .processData(motifRanges, shift=FALSE, readAll=FALSE,
+  motifData <- .processData(motifRanges, shift=FALSE, readAll=FALSE, 
                             seqLevelStyle=seqLevelStyle)
 
   if(!("motif_id" %in% colnames(motifData))){
@@ -201,8 +146,8 @@ getInsertionProfiles <- function(atacData,
 
   # prep ATAC fragment data
   if(is.data.table(atacData)) atacData <- list(atacData)
-  atacFrag <- lapply(atacData, .processData, shift=shift, subSample=subSample,
-                     seqLevelStyle=seqLevelStyle, minFrag=minFrag, maxFrag=maxFrag,
+  atacFrag <- lapply(atacData, .processData, shift=shift, subSample=subSample, 
+                     seqLevelStyle=seqLevelStyle, minFrag=minFrag, maxFrag=maxFrag, 
                      filterLength=TRUE)
   if(!("sample" %in% colnames(atacFrag[[1]]))){
     names(atacFrag) <- names(atacData)
@@ -334,7 +279,7 @@ getInsertionProfiles <- function(atacData,
       atacInserts <- merge(atacInserts,
                            profiles[,c("rel_pos", "motif_id", "w"),with=FALSE],
                            by.x=c("motif_id","rel_pos"),
-                           by.y=c("motif_id","rel_pos"), all.x=TRUE, all.y=FALSE,
+                           by.y=c("motif_id","rel_pos"), all.x=TRUE, all.y=FALSE, 
                            allow.cartesian=TRUE)
       atacInserts[,score:=w*pos_count]
       atacInserts[,dev:=(pos_count/sum(pos_count)-w)^2/(w),
@@ -414,24 +359,24 @@ getInsertionProfiles <- function(atacData,
 #' @param ... Additional arguments passed to `getInsertionProfiles()`, e.g. for computing insertion profiles.
 #' @author Emanuel Sonder
 #' @import data.table
-#' @import GenomicRanges
+#' @import GenomicRanges 
 #' @import SummarizedExperiment
 #' @import Matrix
 #' @importFrom GenomeInfoDb seqlevelsStyle
 #' @return A list containing the following elements: SummarizedExperiment object with weighted insertion counts for the motif matches (insertioncounts), a SummarizedExperiment object with weighted insertion counts for the peaks (bgcounts) and the insertion profile used for weighting (bgPeakProfile). If `calcProfile=TRUE` also a data.table with the computed insertion profiles per motif is returned (insertion_profiles).
 #'
 #' @export
-getWeightedInsertions <- function(atacData,
+getWeightedInsertions <- function(atacData, 
                                   peakRanges,
                                   motifRanges,
                                   genome,
                                   resize=FALSE,
                                   width=300,
-                                  minFrag=30,
+                                  minFrag=30, 
                                   maxFrag=3000,
                                   shift=FALSE,
                                   ...){
-
+                                    
   seqLevelStyle <- GenomeInfoDb::seqlevelsStyle(genome)
   if(resize){
     peakRanges <- .resizeRanges(peakRanges=peakRanges, width=width)
@@ -441,15 +386,15 @@ getWeightedInsertions <- function(atacData,
                                      genome=genome, coerceToGenome=TRUE)
   motifRanges <- .standardChromosomes(motifRanges, species=species,
                                       genome=genome, coerceToGenome=TRUE)
-  peakRanges <- sort(peakRanges)
-  peakRanges$peak_id <- 1:length(peakRanges)
+  peakRanges <- sort(peakRanges)   
+  peakRanges$peak_id <- 1:length(peakRanges)  
   GenomeInfoDb::seqlengths(peakRanges) <- GenomeInfoDb::seqlengths(genome)[GenomeInfoDb::seqlevels(peakRanges)]
-  peakRanges <- GenomicRanges::trim(peakRanges)
+  peakRanges <- GenomicRanges::trim(peakRanges) 
   if(sum(width(peakRanges)==0)>0 | resize & sum(width(peakRanges)<width)>0){
     warning("Some peaks have width 0 or smaller than the provided width after resizing. These will be removed.")
     peakRanges <- peakRanges[width(peakRanges)>0]
-    if(resize) peakRanges <- peakRanges[width(peakRanges)>=width]
-  }
+    if(resize) peakRanges <- peakRanges[width(peakRanges)>=width] 
+  }       
 
   # get weighted insertion counts around motif matches
   args <- list(...)
@@ -457,18 +402,18 @@ getWeightedInsertions <- function(atacData,
   insMot <-  getInsertionProfiles(atacData=atacData, motifRanges=motifRanges,
                                   minFrag=minFrag, maxFrag=maxFrag, shift=shift, ...)
 
-  mmCounts <- insMot$insertion_weighted_counts[,.(w_inserts=sum(w_inserts)),
-                                                  by=.(motif_id, sample, motif_match_id,
+  mmCounts <- insMot$insertion_weighted_counts[,.(w_inserts=sum(w_inserts)), 
+                                                  by=.(motif_id, sample, motif_match_id, 
                                                        chr, start, end)]
-
+  
   # aggregate per peak
   max0 <- function(x) {
     if (length(x) == 0) return(0)
     max(x, na.rm=TRUE)
   }
-  peakCounts <- genomicRangesMapping(peakRanges,
+  peakCounts <- genomicRangesMapping(peakRanges, 
                                      assayTable=mmCounts,
-                                     byCols=c("motif_id", "sample"),
+                                     byCols=c("motif_id", "sample"), 
                                      scoreCol="w_inserts",
                                      aggregationFun=max0,
                                      type="any")
@@ -480,22 +425,22 @@ getWeightedInsertions <- function(atacData,
   counts <- Reduce("rbind", counts[-1], counts[[1]])
   rownames(counts) <- names(peakCounts)
   colnames(counts) <- samples
-
+  
   # get weighted insertions of peaks
   # todo: switch to do.call
   args$calcProfile <- TRUE
   args$profiles <- NULL
-  args <- c(list(atacData=atacData, motifRanges=peakRanges,
+  args <- c(list(atacData=atacData, motifRanges=peakRanges, 
                  minFrag=minFrag, maxFrag=maxFrag, shift=shift), args)
   insPeaks <-  do.call(getInsertionProfiles, args)
-  bgCounts <- insPeaks$insertion_weighted_counts[,.(w_inserts=sum(w_inserts)),
-                                                    by=.(motif_id, sample, motif_match_id,
+  bgCounts <- insPeaks$insertion_weighted_counts[,.(w_inserts=sum(w_inserts)), 
+                                                    by=.(motif_id, sample, motif_match_id, 
                                                          chr, start, end)]
   zeroPeaks <- setdiff(1:length(peakRanges), bgCounts$motif_match_id)
   bgCounts <- rbind(bgCounts, data.table(motif_match_id=rep(zeroPeaks, each=ncol(counts)),
                                          sample=rep(colnames(counts), each=length(zeroPeaks)),
                                          w_inserts=0),fill=TRUE)
-  bgCounts <- dcast(bgCounts, motif_match_id ~ sample, value.var="w_inserts", fill=0,
+  bgCounts <- dcast(bgCounts, motif_match_id ~ sample, value.var="w_inserts", fill=0, 
                     fun.aggregate=sum, drop=FALSE)
   setorder(bgCounts, motif_match_id)
   bgCounts$motif_match_id <- NULL
@@ -516,13 +461,12 @@ getWeightedInsertions <- function(atacData,
   } else {
     subSample <- NULL
   }
-  if(is.data.table(atacData)) atacData <- list(atacData)
   atacData <- lapply(atacData, .processData, minFrag=minFrag, maxFrag=maxFrag, seqLevelStyle=seqLevelStyle, filterLength=TRUE, shift=shift, subSample=subSample)
   atacData <- rbindlist(atacData, idcol="sample")
   atacData[,frag_width:=as.integer(end-start+1L)]
-  peakFragWidths <- genomicRangesMapping(peakRanges,
-                                         assayTable=atacData,
-                                         byCols="sample",
+  peakFragWidths <- genomicRangesMapping(peakRanges, 
+                                         assayTable=atacData, 
+                                         byCols="sample", 
                                          scoreCol="frag_width",
                                          aggregationFun=function(x){floor(median(x))}, # get mean fragment width per peak and sample, then get the mean across samples (to avoid bias from different sequencing depth across samples)
                                          type="any",
