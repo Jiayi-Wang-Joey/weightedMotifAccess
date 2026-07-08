@@ -35,7 +35,8 @@ Imports:
     fields,
     affy,
     matrixStats,
-    epiwraps
+    epiwraps,
+    GenomicAlignments
 Suggests: 
     knitr,
     rmarkdown,

@@ -58,3 +58,5 @@ WeightInsertModels.BiocCheck/
 R/._utils.R
 **/._*
 **/**/arch
+._*
+.gitignore
