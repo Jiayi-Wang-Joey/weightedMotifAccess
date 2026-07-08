@@ -129,36 +129,13 @@
     list(atacFrag = atacFrag, ranges = ranges)
 }
 
-# .matchSeqlevels <- function(atacFrag, ranges) {
-#     frags <- rbindlist(atacFrag)
-#     fragSeq <- unique(frags$seqnames)
-#     rangeSeq <- GenomicRanges::seqnames(ranges)
-#     common <- intersect(fragSeq,rangeSeq)
-#     atacFrag <- lapply(atacFrag, function(frag) {
-#         frag <- frag[seqnames %in% common,]
-#         frag$seqnames <- factor(frag$seqnames)
-#         frag})
-#     ranges <- ranges[seqnames(ranges) %in% common,]
-#     # turn seqnames to factor
-#     list(atacFrag=atacFrag, ranges=ranges)
-# }
-
-#' Convert a data.table to a GRanges object
+#' @title dtToGr
 #'
-#' @param x A data.frame or data.table with genomic coordinates.
-#' @return A GRanges object.
-#' @examples
-#' library(data.table)
-#' dt <- data.table(
-#'     seqnames = c("chr1", "chr1"),
-#'     start = c(100, 200),
-#'     end = c(150, 250)
-#' )
-#' gr <- dtToGr(dt)
-#' gr
+#' @description
+#' Convert a data table to GenomicRange object
 #' @author Emanuel Sonder
 
-dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
+.dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
                     strandCol="strand", stranded=FALSE, addMetaCols=TRUE){
   dt <- copy(dt)
   setnames(dt, seqCol, "seqnames", skip_absent = TRUE)
@@ -209,49 +186,241 @@ dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
     gr
 }
 
+.processData <- function(data, readAll=FALSE, shift=FALSE,
+                         subSample=NULL, seqLevelStyle="UCSC",
+                         filterLength=FALSE,
+                         minFrag=30, maxFrag=3000){
+  if(is.character(data)){
+    if(grepl(".bam", basename(data), fixed=TRUE))
+    {
+      param <- Rsamtools::ScanBamParam(what=c('pos', 'qwidth', 'isize'))
+      readPairs <- GenomicAlignments::readGAlignmentPairs(data, param=param)
 
-# Functionality is from another project, not yet sure how it will be packaged
-#' Mapping & aggregating modalities with genomic coordinates to reference
+      # get fragment coordinates from read pairs
+      seqDat <- GRanges(seqnames(readPairs@first),
+                        IRanges(start=pmin(GenomicAlignments::start(readPairs@first),
+                                           GenomicAlignments::start(readPairs@last)),
+                                end=pmax(GenomicAlignments::end(readPairs@first),
+                                         GenomicAlignments::end(readPairs@last))),
+                        strand=GenomicAlignments::strand(readPairs))
+      seqDat <- granges(seqDat, use.mcols=TRUE)
+      seqDat <- as.data.table(seqDat)
+      setnames(seqDat, c("seqnames"), c("chr"))
+    }
+    else if(grepl(".bed", basename(data), fixed=TRUE)){
+      if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
+      else{
+
+        readBed <- function(data){
+          tryCatch(
+            {
+              seqDat <- fread(data, select=c(1:3,6),
+                              col.names=c("chr", "start", "end", "strand"),
+                              stringsAsFactors=TRUE)
+              return(seqDat)},
+            error = function(cond){
+              seqDat <- fread(data, select=c(1:3),
+                              col.names=c("chr", "start", "end"),
+                              stringsAsFactors=TRUE)
+              return(seqDat)
+            })}
+        seqDat <- readBed(data)
+      }
+    }
+    else if(grepl(".tsv", basename(data), fixed=TRUE)){
+      if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
+      else{
+        seqDat <- fread(data, select=c(1:3),
+                        col.names=c("chr", "start", "end"),
+                        stringsAsFactors=TRUE)}
+      if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
+    }
+    else if(grepl(".rds", basename(data), fixed=TRUE)){
+      seqDat <- as.data.table(readRDS(data))
+      if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
+    }
+  }
+  else{
+    seqDat <- as.data.table(data)
+    if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
+    seqDat$chr <- factor(seqDat$chr)
+  }
+
+  if(!is.null(subSample) & is.numeric(subSample)){
+    message("Subsampling file")
+    subSample <- as.integer(subSample)
+    seqDat <- seqDat[sample(1:nrow(seqDat), min(nrow(seqDat), subSample)),]
+  }
+
+  # Match seqlevelstyle to reference
+  if((sum(grepl("chr", levels(seqDat$chr)))==0 & seqLevelStyle=="UCSC") |
+     (sum(grepl("chr", levels(seqDat$chr)))>0 & seqLevelStyle=="NCBI")){
+    tmpgr <- GRanges(levels(seqDat[["chr"]]),
+                      IRanges(seq_along(levels(seqDat[["chr"]])), width=2L))
+    seqlevelsStyle(tmpgr) <- seqLevelStyle
+    levels(seqDat$chr) <- seqlevels(tmpgr)
+  }
+
+  # Insert ATAC shift
+  if(shift){
+    seqDat[, start:=start+4L]
+    seqDat[, end:=end-4L]
+  }
+  else if(shift){
+    warning("Did not shift as no column named strand was not found")
+  }
+
+  seqDat[, start:=as.integer(start)]
+  seqDat[, end:=as.integer(end)]
+
+  if(filterLength){
+    seqDat <- subset(seqDat, end-start+1>=minFrag & end-start+1<=maxFrag)
+  }
+
+  #if(!readAll & "width" %in% colnames(seqDat)) seqDat$width <- NULL
+
+  return(seqDat)
+}
+
+#' Mapping & aggregation of modalities with genomic coordinates to a set of reference
 #' coordinates.
 #'
-#' Internal convencience function for mapping different modality scores with
+#' Convencience function for mapping different modality scores with
 #' cell type and further labels such as tfs to reference coordinates. The resulting
-#' table will have dimension ref coords x byCols (or ref coord x byCols[1] x byCols[2]).
+#' table will have dimension ref coords x byCols (or ref coord x byCols`[1]` x byCols`[2]`).
 #' ByCols can be for instance cell type labels and/or transcription factor names.
 #'
-#'@name .genomicRangesMapping
-#'@param refRanges GRanges object with reference coordinates
-#'@param assayTable modality table to be mapped to the reference coordinates.
-#'Needs to containing genomic coordinates (see args: seqNamesCol, startCol, endCol), and byCols.
-#'@param byCols will be the columns /depths of the resulting matrix with dimension
-#' ref coords x byCols (or ref coord x byCols[1] x byCols[2]).
-#' ByCols can be for instance cell type labels and/or transcription factor names.
-#' @param seqNamesCol name of the column in motif, atac and chIP-seq data.tables containing
-#' the sequence information.
-#' @param startCol name of the column in motif, atac and chIP-seq data.tables containing
-#' the start coordinate.
-#' @param endCol name of the column in motif, atac and chIP-seq data.tables containing
-#' the end coordinate.
-#' @param scoreCol name of the score column (e.g. motif matching scores, atac fragment counts)
-#' @param aggregationFun function (e.g. mean, median, sum) used to aggregate
-#' if multiple rows of the assayTable overlap a reference coordinate.
-#' @param BPPARAM BiocParallel argument either SerialParam() or MulticoreParam(workers=n)
+#' @name genomicRangesMapping
+#' @param refRanges GRanges object with reference coordinates
+#' @param assayTable  List of [GenomicRanges::GRanges-class], [data.table::data.table], data.frames or paths to .bed /. bam files
+#' containing assay data (e.g. fragments, motif scores, peaks) to be aggregated across the reference ranges provided.
+#' Need to contain genomic coordinates (e.g. a chr/seqnames, start and end column).
+#' @param byCols Variables across which the assays will be aggregated.
+#' Will be the columns of the resulting [Matrix::Matrix-class]. If byCols is a vector with two elements,
+#' the first one will constitute the list elements, the second the columns of the matrices being the list elements.
+#' If they are factors (preferred) aggregation will happen across all levels, otherwise across all unique entries.
+#' @param scoreCol name of the score column (e.g. motif matching scores, atac fragment counts) to be aggregated.
+#' If it is NULL, the number of assay ranges overlapping the reference ranges will be counted.
+#' @param aggregationFun function (e.g. mean, median, sum) used to aggregate.
+#' If it is NULL, the number of assay ranges overlapping the reference ranges will be counted.
+#' @param minoverlap Minimal overlap between refRanges and the assay ranges
+#' Passed to [GenomicRanges::findOverlaps()]
+#' @param type Type of overlap to be used, can be one of "any", "start", "end", "within", "equal".
+#' Passed to [GenomicRanges::findOverlaps()]. Default is "any".
+#' @param shift If Tn5 insertion bias should be considered (only if strand column is provided).
+#' @param chunk If data should be processed in chunks (determined by chromosomes in `refRanges`). Recommended for large data.
+#' @param BPPARAM Parallel back-end to be used. Passed to [BiocParallel::bplapply()].
+#' @return [Matrix::Matrix-class] or list of Matrices with rows corresponding to the reference ranges and columns (and list elements) to byCols.
+#' @import data.table
+#' @import Matrix
+#' @importFrom GenomicRanges findOverlaps GRanges GRangesList
+#' @importClassesFrom GenomicRanges GRanges
+#' @importFrom GenomeInfoDb seqlevelsStyle keepStandardChromosomes seqlevels
+#' @importFrom BiocParallel bplapply MulticoreParam SerialParam SnowParam
+#' @importFrom GenomicAlignments readGAlignmentPairs start end strand
+#' @importFrom Rsamtools ScanBamParam
+#' @importFrom S4Vectors split
 #' @author Emanuel Sonder
 #' @export
-.genomicRangesMapping <- function(refRanges,
-                                  assayTable,
-                                  byCols=c("tf_uniprot_id",
-                                           "cell_type_id"),
-                                  seqNamesCol="chr",
-                                  startCol="start",
-                                  endCol="end",
-                                  scoreCol=NULL,
-                                  calledInCol=NULL,
-                                  aggregationFun=NULL,
-                                  minoverlap=1,
-                                  BPPARAM=SerialParam()){
+genomicRangesMapping <- function(refRanges,
+                                 assayTable,
+                                 byCols=c("tf_name",
+                                          "cellular_context"),
+                                 scoreCol=NULL,
+                                 aggregationFun=NULL,
+                                 minoverlap=1,
+                                 type=c("any", "start", "end",
+                                        "within", "equal"),
+                                 shift=FALSE,
+                                 chunk=NULL,
+                                 BPPARAM=SerialParam()){
+
+  type <- match.arg(type, choices=c("any","start", "end",
+                                    "within", "equal"))
+
   # TODO: - add warning for integer overflows - data.table size
-  assayTable <- copy(assayTable)
+  assayTable <- .processData(assayTable, readAll=TRUE, shift=shift,
+                             seqLevelStyle=seqlevelsStyle(refRanges))
+  colsDepth <- unique(assayTable[[byCols[1]]])
+
+  if(is.null(chunk)){
+    chunk <- fifelse(nrow(assayTable)>1e7, TRUE, FALSE)
+  }
+
+  if(chunk){
+    chrLevelsRef <- levels(seqnames(refRanges))
+    assayTable <- subset(assayTable, chr %in% chrLevelsRef)
+    assayTable[,chr:=factor(chr, levels=chrLevelsRef)]
+    assayTable[[byCols[1]]] <- factor(assayTable[[byCols[1]]])
+    if(length(byCols)>1){
+      assayTable[[byCols[2]]] <- factor(assayTable[[byCols[2]]])}
+
+    assayTable <- split(assayTable, by="chr")
+    refRangesList <- S4Vectors::split(refRanges, seqnames(refRanges))
+
+    assayTable <- assayTable[names(refRangesList)]
+    overlapTable <- mapply(genomicRangesMapping,
+                           refRangesList, assayTable,
+                           MoreArgs=list(byCols=byCols, scoreCol=scoreCol,
+                                         aggregationFun=aggregationFun,
+                                         chunk=FALSE, shift=shift,
+                                         type=type,
+                                         BPPARAM=BPPARAM),
+                           SIMPLIFY=FALSE)
+
+    # retrieve original order
+    refRangesList <- Reduce("c", refRangesList[-1], refRangesList[[1]])
+    ind <- GenomicRanges::findOverlaps(refRangesList, refRanges,
+                                       select="first", type="equal")
+
+    rbindFill  <- function(mat1, mat2){
+
+      if(is.null(mat1)) mat1 <- Matrix::Matrix(nrow=0, ncol=0)
+      if(is.null(mat2)) mat2 <- Matrix::Matrix(nrow=0, ncol=0)
+
+      allCols <- union(colnames(mat1), colnames(mat2))
+      diffCols1 <- setdiff(allCols, colnames(mat1))
+      diffCols2 <- setdiff(allCols, colnames(mat2))
+
+      # get missing columns
+      mat1Missing <- Matrix::Matrix(0, nrow=nrow(mat1), ncol=length(diffCols1),
+                                       dimnames=list(NULL, diffCols1))
+      mat1 <- cbind(mat1, mat1Missing)
+
+      mat2Missing <- Matrix::Matrix(0, nrow=nrow(mat2), ncol=length(diffCols2),
+                                       dimnames=list(NULL, diffCols2))
+      mat2 <- cbind(mat2, mat2Missing)
+
+      mat1 <- mat1[,allCols, drop=FALSE]
+      mat2 <- mat2[,allCols, drop=FALSE]
+      rbind(mat1, mat2)
+    }
+
+    if(length(byCols)>1){
+      overlapTable <- lapply(colsDepth, function(col){
+                             tablesChr <- lapply(overlapTable,
+                                                 function(tables) tables[[col]])
+                             tablesChr <- Reduce("rbindFill", tablesChr[-1],
+                                                              tablesChr[[1]])
+                             tablesChr <- tablesChr[ind,,drop=FALSE]
+                             tablesChr})
+      names(overlapTable) <- colsDepth
+    }
+    else{
+      overlapTable <- Reduce("rbindFill", overlapTable[-1], overlapTable[[1]])
+      overlapTable <- overlapTable[ind,,drop=FALSE]
+    }
+
+    return(overlapTable)
+  }
+
+  seqNamesCol <- "chr"
+  startCol <- "start"
+  endCol <- "end"
+
+  if(sum(!(byCols %in% colnames(assayTable)))>0 | is.null(byCols)){
+    stop("byCols needed to be provided and column names of assayTable.")
+  }
 
   # attribute generic names to dimensionalities
   if(length(byCols)==2)
@@ -269,62 +438,80 @@ dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
 
   # get dimensions of tables
   nRefs <- length(refRanges)
-  nColsWidth <- length(unique(assayTable$col_width))
 
+  if(is.factor(assayTable$col_width)){
+    colsWidth <- levels(assayTable$col_width)
+  }
+  else{
+    colsWidth <- unique(assayTable$col_width)
+  }
+  nColsWidth <- length(colsWidth)
   # convert to integer for speed-up
-  levels <- unique(assayTable$col_width)
-  assayTable[,col_width:=as.integer(factor(assayTable$col_width, levels=levels))]
+  assayTable[,col_width:=as.integer(factor(assayTable$col_width, levels=colsWidth))]
+
+  if(is.factor(assayTable$col_depth)){
+    colsDepth <- levels(assayTable$col_depth)
+  }
+  else{
+    colsDepth <- unique(assayTable$col_depth)
+  }
 
   # convert to GRanges for faster overlap finding
-  suppressWarnings(assayTable$width <- NULL)
-  suppressWarnings(assayTable$strand <- NULL)
-  assayRanges <- makeGRangesFromDataFrame(as.data.frame(assayTable),
-                                          keep.extra.columns=TRUE,
-                                          seqnames.field=seqNamesCol,
-                                          start.field=startCol,
-                                          end.field=endCol,
-                                          ignore.strand=TRUE)
+  if("width" %in% colnames(assayTable)) assayTable$width <- NULL
+  if("strand" %in% colnames(assayTable)) assayTable$strand <- NULL
+
+  assayRanges <- .dtToGr(assayTable, seqCol="chr", addMetaCols=TRUE)
 
   # find overlaps with ref. coordinates
-  overlapTable <- as.data.table(findOverlaps(refRanges, assayRanges,
-                                             type="any",
-                                             minoverlap=minoverlap,
-                                             ignore.strand=TRUE))
+  overlapTable <- as.data.table(GenomicRanges::findOverlaps(refRanges,
+                                                            assayRanges,
+                                                            type=type,
+                                                            minoverlap=minoverlap,
+                                                            ignore.strand=TRUE))
   rm(refRanges, assayRanges)
 
   # retrieve tf and cell type ids
   overlapTable <- cbind(overlapTable$queryHits,
                         assayTable[overlapTable$subjectHits,
-                                   c(byCols, scoreCol, calledInCol),
+                                   c(byCols, scoreCol),
                                    with=FALSE])
+  rm(assayTable)
+
+  threads <- floor(getDTthreads())/BPPARAM$workers
 
   if(multiTf)
   {
     setkey(overlapTable, V1, col_width)
-    if(!is.null(calledInCol)) setnames(overlapTable, calledInCol, "calledInCol")
     if(!is.null(scoreCol)) setnames(overlapTable, scoreCol, "scoreCol")
     overlapTable <- split(overlapTable, by=c("col_depth"))
 
-    overlapTable <- BiocParallel::bplapply(overlapTable, function(table){
+    overlapTable <- BiocParallel::bplapply(overlapTable, function(table,
+                                                                  scoreCol,
+                                                                  aggregationFun,
+                                                                  nRefs,
+                                                                  colsWidth,
+                                                                  threads){
 
-      if(!is.null(scoreCol) | !is.null(aggregationFun)){
-        table <- table[,.(value=aggregationFun(scoreCol)),
-                       by=c("V1", "col_width")]}
-      else{
+      data.table::setDTthreads(threads)
+
+      if(is.null(scoreCol) | is.null(aggregationFun)){
         table <- table[,.(value=.N),
                        by=c("V1", "col_width")]}
+      else{
+        table <- table[,.(value=aggregationFun(scoreCol)),
+                       by=c("V1", "col_width")]}
 
-      # one would need to construct a second table here for the neg labels
+      nColsWidth <- length(colsWidth)
 
       # convert to sparse matrix
       table <- sparseMatrix(i=table$V1,
-                            j=as.integer(table$col_width), # 11.07.2024 as.integer is not needed
+                            j=as.integer(table$col_width),
                             dims=c(nRefs, nColsWidth),
                             x=table$value)
-      colnames(table) <- levels
-      return(table)},
+      colnames(table) <- colsWidth
+      return(table)}, scoreCol=scoreCol, aggregationFun=aggregationFun,
+                      nRefs=nRefs, colsWidth=colsWidth, threads=threads,
       BPPARAM=BPPARAM)
-
   }
   else
   {
@@ -332,12 +519,13 @@ dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
     overlapTable[,V1:=as.integer(V1)]
     setkey(overlapTable, col_width, V1)
 
-    if(!is.null(scoreCol) | !is.null(aggregationFun)){
-      setnames(overlapTable, scoreCol, "scoreCol")
-      overlapTable <- overlapTable[,.(scoreCol=aggregationFun(scoreCol)),
+    # overlap with ref. coordinates
+    if(is.null(scoreCol) | is.null(aggregationFun)){
+      overlapTable <- overlapTable[,.(scoreCol=.N),
                                    by=c("col_width", "V1")]}
     else{
-      overlapTable <- overlapTable[,.(scoreCol=.N),
+      setnames(overlapTable, scoreCol, "scoreCol")
+      overlapTable <- overlapTable[,.(scoreCol=aggregationFun(scoreCol)),
                                    by=c("col_width", "V1")]}
 
     # convert to sparse matrix
@@ -345,174 +533,22 @@ dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
                                          j=overlapTable$col_width,
                                          dims=c(nRefs, nColsWidth),
                                          x=overlapTable$scoreCol)
+    overlapTable <- Matrix::Matrix(overlapTable)
 
-    colnames(overlapTable) <- levels
+    colnames(overlapTable) <- colsWidth
+  }
+
+  # add combinations with zero overlaps
+  missingDepthCols <- setdiff(colsDepth, names(overlapTable))
+  if(length(missingDepthCols)>0){
+    missingMat <- Matrix(0,nrow=nRefs, ncol=nColsWidth, doDiag=FALSE)
+    colnames(missingMat) <- colsWidth
+    missingTables <- replicate(length(missingDepthCols),
+                               missingMat)
+    names(missingTables) <- missingDepthCols
+    overlapTable <- c(overlapTable, missingTables)
   }
 
   gc()
   return(overlapTable)
 }
-
-#' @author Pierre-Luc
-getNonRedundantMotifs <- function(format=c("PFMatrix","universal","PWMatrix"),
-                                  species=c("Hsapiens","Mmusculus")){
-  species <- match.arg(species)
-  motifs <- MotifDb::query(MotifDb::MotifDb, c(species,"HOCOMOCO"))
-  pat <- paste0("^",species,"-HOCOMOCOv1[0-1]-|_HUMAN.+|_MOUSE.+|core-[A-D]-|secondary-[A-D]-")
-  modf <- data.frame(row.names=names(motifs),
-                     TF=gsub(pat,"",names(motifs)),
-                     grade=gsub(".+\\.","",names(motifs)))
-  modf <- modf[order(modf$TF,-as.numeric(grepl("HOCOMOCOv11",row.names(modf))),modf$grade),]
-  modf <- modf[!duplicated(modf$TF),]
-  motifs <- motifs[row.names(modf)]
-  switch(match.arg(format),
-         universal=setNames(universalmotif::convert_motifs(motifs), modf$TF),
-         PFMatrix=do.call(TFBSTools::PFMatrixList, setNames(
-           universalmotif::convert_motifs(motifs, class="TFBSTools-PFMatrix"),
-           modf$TF)),
-         PWMatrix=do.call(TFBSTools::PWMatrixList,
-                          setNames(universalmotif::convert_motifs(motifs,
-                                                                  class="TFBSTools-PWMatrix"), modf$TF))
-  )
-}
-
-#' #' Get motif matches
-#' #'
-#' #' @param genome A BSgenome respective to the genome used for the alignment.
-#' #' @param peakpath The path to the merged ATAC-seq peaks from control and treatment conditions.
-#' #' @param spec Species. Either "Hsapiens" or "Mmusculus".
-#' #' @param seqStyle Either "ensembl" or "UCSC" depending on the format of the peak file.
-#' #' @param srcFolder Folder where to find scripts and important objects
-#' #'
-#' #' @author Pierre-Luc
-#' #'
-#'
-#' getpmoi <- function(genome,
-#'                     peaks,
-#'                     spec=c("Homo sapiens", "Mus musculus"), minHits=50L,
-#'                     seqStyle=c("ensembl", "NCBI","UCSC"), keepTop=NULL,
-#'                     srcFolder, motifs=NULL, thresh=NULL){
-#'   seqStyle <- match.arg(seqStyle)
-#'
-#'   if(is.character(peaks)){
-#'     peals <- sort(rtracklayer::import(peaks))
-#'   }
-#'   peaks <- keepStandardChromosomes(peaks,
-#'                                    pruning.mode = "coarse")
-#'
-#'   seqlevelsStyle(genome) <- seqStyle
-#'   peak_seqs <- memes::get_sequence(peaks, genome)
-#'
-#'   # Get the motifs in universal format required by memes
-#'   if(is.null(motifs)){
-#'     if(spec=="Homo sapiens"){
-#'       spec <- "Hsapiens"}
-#'     else if(spec=="Mus musculus"){
-#'       spec <- "Mmusculus"}
-#'
-#'     motifs <- getNonRedundantMotifs("universal", species = spec)
-#'   }
-#'
-#'   # Obtain the positions of motif instances which are later required as input for runATAC
-#'   if(is.null(thresh)) thresh <- 1e-4
-#'   pmoi <- memes::runFimo(peak_seqs,
-#'                   motifs, thresh=thresh,
-#'                   meme_path="/common/meme/bin/",
-#'                   skip_matched_sequence=TRUE)
-#'   pmoi <- pmoi[order(mcols(pmoi)$motif_id, -mcols(pmoi)$score)]
-#'   pmoi <- split(pmoi, pmoi$motif_id)
-#'   if(!is.null(minHits)) pmoi <- pmoi[which(lengths(pmoi)>=minHits)]
-#'   if(!is.null(keepTop)) pmoi <- lapply(split(pmoi, pmoi$motif_id), n=keepTop, FUN=head)
-#'   pmoi <- sort(unlist(GRangesList(pmoi)))
-#'   return(pmoi)
-#' }
-#'
-#' #' @author Emanuel Sonder
-#' .processData <- function(data, readAll=FALSE, shift=FALSE,
-#'                          subSample=NULL, seqLevelStyle="UCSC"){
-#'   if(is.character(data)){
-#'     if(grepl(".bam", basename(data), fixed=TRUE))
-#'     {
-#'       param <- Rsamtools::ScanBamParam(what=c('pos', 'qwidth', 'isize'))
-#'       readPairs <- GenomicAlignments::readGAlignmentPairs(data, param=param)
-#'
-#'       # get fragment coordinates from read pairs
-#'       seqDat <- GRanges(seqnames(readPairs@first),
-#'                         IRanges(start=pmin(GenomicAlignments::start(readPairs@first),
-#'                                            GenomicAlignments::start(readPairs@last)),
-#'                                 end=pmax(GenomicAlignments::end(readPairs@first),
-#'                                          GenomicAlignments::end(readPairs@last))),
-#'                         strand=GenomicAlignments::strand(readPairs))
-#'       seqDat <- granges(seqDat, use.mcols=TRUE)
-#'       seqDat <- as.data.table(seqDat)
-#'       setnames(seqDat, c("seqnames"), c("chr"))
-#'     }
-#'     else if(grepl(".bed", basename(data), fixed=TRUE)){
-#'       if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
-#'       else{
-#'
-#'         readBed <- function(data){
-#'           tryCatch(
-#'             {
-#'               seqDat <- fread(data, select=c(1:3,6),
-#'                               col.names=c("chr", "start", "end", "strand"),
-#'                               stringsAsFactors=TRUE)
-#'               return(seqDat)},
-#'             error = function(cond){
-#'               seqDat <- fread(data, select=c(1:3),
-#'                               col.names=c("chr", "start", "end"),
-#'                               stringsAsFactors=TRUE)
-#'               return(seqDat)
-#'             })}
-#'         seqDat <- readBed(data)
-#'       }
-#'     }
-#'     else if(grepl(".tsv", basename(data), fixed=TRUE)){
-#'       if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
-#'       else{
-#'         seqDat <- fread(data, select=c(1:3),
-#'                         col.names=c("chr", "start", "end"),
-#'                         stringsAsFactors=TRUE)}
-#'       if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
-#'     }
-#'     else if(grepl(".rds", basename(data), fixed=TRUE)){
-#'       seqDat <- as.data.table(readRDS(data))
-#'       if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
-#'     }
-#'   }
-#'   else{
-#'     seqDat <- as.data.table(data)
-#'     if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
-#'     seqDat$chr <- factor(seqDat$chr)
-#'   }
-#'
-#'   if(!is.null(subSample) & is.numeric(subSample)){
-#'     message("Subsampling file")
-#'     subSample <- as.integer(subSample)
-#'     seqDat <- seqDat[sample(1:nrow(seqDat), min(nrow(seqDat), subSample)),]
-#'   }
-#'
-#'   # Match seqlevelstyle to reference
-#'   if((sum(grepl("chr", levels(seqDat$chr)))==0 & seqLevelStyle=="UCSC") |
-#'      (sum(grepl("chr", levels(seqDat$chr)))>0 & seqLevelStyle=="NCBI")){
-#'     tmpgr <- GRanges(levels(seqDat[["chr"]]),
-#'                      IRanges(seq_along(levels(seqDat[["chr"]])), width=2L))
-#'     seqlevelsStyle(tmpgr) <- seqLevelStyle
-#'     levels(seqDat$chr) <- seqlevels(tmpgr)
-#'   }
-#'
-#'   # Insert ATAC shift
-#'   if(shift){
-#'     seqDat[, start:=start+4L]
-#'     seqDat[, end:=end-4L]
-#'   }
-#'   else if(shift){
-#'     warning("Did not shift as no column named strand was not found")
-#'   }
-#'
-#'   seqDat[, start:=as.integer(start)]
-#'   seqDat[, end:=as.integer(end)]
-#'   if("width" %in% colnames(seqDat)) seqDat$width <- NULL
-#'
-#'   return(seqDat)
-#' }
