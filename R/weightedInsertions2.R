@@ -1,4 +1,9 @@
-#' weightedInsertions
+#' @title Compute weighted Tn5-insertion motif activity scores
+#'
+#' @description
+#' Computes bias-corrected, weighted counts of Tn5 insertion events around
+#' motif matches, producing per-motif activity scores that can be used for
+#' differential motif activity analysis.
 #'
 #' @param lf A named vector of paths to files, either (indexed) bam files or
 #'   tabix-indexed fragment files.
@@ -33,10 +38,40 @@
 #' @importFrom epiwraps bamChrChunkApply tabixChrApply views2Matrix
 #' @importFrom BiocParallel bplapply bpstop MulticoreParam
 #' @importFrom GenomicRanges sort reduce resize start end seqnames granges
-#' @importFrom GenomicRanges countOverlaps overlapsAny coverage Views
-#' @importFrom IRanges ranges
+#' @importFrom GenomicRanges countOverlaps coverage distanceToNearest
+#' @importFrom IRanges IRanges ranges overlapsAny Views
+#' @importFrom S4Vectors to
 #' @importFrom stats smooth lowess
 #' @examples
+#' set.seed(1)
+#' # two peaks on a toy chromosome
+#' peaks <- GenomicRanges::GRanges("chr1",
+#'     IRanges::IRanges(c(1, 2501), c(2500, 5000)))
+#'
+#' # two synthetic motifs, three matches each, all within the peaks
+#' motifMatches <- GenomicRanges::GRanges(
+#'     "chr1",
+#'     IRanges::IRanges(start = c(500, 1500, 2500, 1000, 2000, 3000),
+#'                      width = rep(c(8L, 10L), each = 3)),
+#'     motif_id = rep(c("motifA", "motifB"), each = 3)
+#' )
+#'
+#' # synthetic ATAC-seq fragments, tabix-indexed (`lf` can also point to
+#' # indexed bam files instead)
+#' frags <- tempfile(fileext = ".tsv")
+#' n <- 2000
+#' d <- data.frame(chr = "chr1", start = sample.int(4900, n, replace = TRUE))
+#' d$end <- d$start + sample(50:400, n, replace = TRUE)
+#' d <- d[order(d$start), ]
+#' write.table(d, frags, col.names = FALSE, row.names = FALSE, sep = "\t",
+#'             quote = FALSE)
+#' frags <- Rsamtools::bgzip(frags)
+#' Rsamtools::indexTabix(frags, format = "bed")
+#'
+#' res <- weightedInsertions(c(sample1 = frags), peaks, motifMatches,
+#'                            extension = 50L, verbose = FALSE)
+#' res$wInsCounts
+#' unlink(c(frags, paste0(frags, ".tbi")))
 weightedInsertions <- function(lf, peaks, motifMatches, extension=200L,
                                  shift=NULL, ncores=1, verbose=TRUE,
                                  weightMode=c("sub","asIs"), smooth=1/30,

@@ -63,10 +63,12 @@
 #' Sanity check to ensure the input arguments have the correct classes
 #'
 #' @param atacFrag: a list of data.tables that contain the ranges of fragments
-#' @param peakRanges: a GRange object that contains the ranges of peaks
-#' @param motifRanges:  a GRange object that contains the ranges of motifs,
-#' check metadata columns
-#' check seqnames to factor in datatable
+#' @param ranges: a GRanges object that contains the ranges of peaks or motifs
+#' @param type: either "peaks" or "motifs"; determines which sanity checks
+#' are applied (e.g. for "motifs", checks that a `motif` metadata column
+#' is present)
+#' @return NULL, invisibly; called for its side effect of raising an error
+#' if the inputs are malformed.
 .sanityCheck <- function(atacFrag,
                          ranges,
                          type = c("peaks", "motifs")) {
@@ -76,7 +78,7 @@
         }
     })
 
-    if (!class(ranges)=="GRanges") {
+    if (!is(ranges, "GRanges")) {
         stop("ranges should be a GRanges object")
     }
 
@@ -158,6 +160,9 @@
 #' @description match the chromosomes between fragments and peaks/motifs
 #' @param atacFrag: a list of data tables containing the fragments information
 #' @param ranges: a genomic object of peaks/motifs
+#' @return A list with elements `atacFrag` (the input list, filtered to
+#' seqnames common to both `atacFrag` and `ranges`) and `ranges` (the input
+#' ranges, filtered the same way).
 #' @author Jiayi Wang
 #'
 .matchSeqlevels <- function(atacFrag, ranges) {
@@ -181,6 +186,7 @@
 #'
 #' @description
 #' Convert a data table to GenomicRange object
+#' @return A GRanges (or GPos, if `startCol==endCol`) object.
 #' @author Emanuel Sonder
 
 .dtToGr <- function(dt, seqCol="seqnames", startCol="start", endCol="end",
@@ -211,13 +217,7 @@
   return(gr)
 }
 
-.standardChromosomes <- function(gr, species, genome = NULL, coerceToGenome = TRUE) {
-    gr <- keepStandardChromosomes(
-        gr,
-        species = species,
-        pruning.mode = "coarse"
-    )
-
+.coerceSeqlevelsStyle <- function(gr, genome = NULL, coerceToGenome = TRUE) {
     if (isTRUE(coerceToGenome)) {
         if (is.null(genome)) {
             stop("`genome` must be provided when `coerceToGenome = TRUE`.")
@@ -364,12 +364,27 @@
 #' @import Matrix
 #' @importFrom GenomicRanges findOverlaps GRanges GRangesList
 #' @importClassesFrom GenomicRanges GRanges
-#' @importFrom GenomeInfoDb seqlevelsStyle keepStandardChromosomes seqlevels
+#' @importFrom GenomeInfoDb seqlevelsStyle seqlevels
 #' @importFrom BiocParallel bplapply MulticoreParam SerialParam SnowParam
 #' @importFrom GenomicAlignments readGAlignmentPairs start end strand
 #' @importFrom Rsamtools ScanBamParam
 #' @importFrom S4Vectors split
 #' @author Emanuel Sonder
+#' @examples
+#' data(NR3C1example, package = "weightedMotifAccess")
+#' peaks <- rowRanges(peakSE)[seq_len(100)]
+#' mm <- assay(motifMatches, "motifMatches")[seq_len(100), seq_len(3)]
+#' hits <- which(mm, arr.ind = TRUE)
+#' at <- data.table::data.table(
+#'   seqnames = as.character(GenomicRanges::seqnames(peaks))[hits[,"row"]],
+#'   start    = GenomicRanges::start(peaks)[hits[,"row"]],
+#'   end      = GenomicRanges::end(peaks)[hits[,"row"]],
+#'   sample   = colnames(mm)[hits[,"col"]],
+#'   score    = 1L
+#' )
+#' res <- genomicRangesMapping(peaks, assayTable = at, byCols = "sample",
+#'                              scoreCol = "score", type = "equal")
+#' dim(res)
 #' @export
 genomicRangesMapping <- function(refRanges,
                                  assayTable,

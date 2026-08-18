@@ -25,7 +25,6 @@ test_that("getWeightedCounts returns a SummarizedExperiment with correct dims", 
     atacFrag   = atacFrag,
     ranges     = peaks,
     genome     = genome,
-    species    = "Homo sapiens",
     fragWeight = FALSE,
     peakWeight = FALSE
   )
@@ -62,7 +61,6 @@ test_that("getWeightedCounts fragWeight=TRUE returns non-negative counts", {
     atacFrag   = atacFrag,
     ranges     = peaks,
     genome     = genome,
-    species    = "Homo sapiens",
     fragWeight = TRUE,
     peakWeight = FALSE
   )

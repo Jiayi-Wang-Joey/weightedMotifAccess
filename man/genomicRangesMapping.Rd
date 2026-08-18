@@ -57,6 +57,22 @@ cell type and further labels such as tfs to reference coordinates. The resulting
 table will have dimension ref coords x byCols (or ref coord x byCols`[1]` x byCols`[2]`).
 ByCols can be for instance cell type labels and/or transcription factor names.
 }
+\examples{
+data(NR3C1example, package = "weightedMotifAccess")
+peaks <- rowRanges(peakSE)[seq_len(100)]
+mm <- assay(motifMatches, "motifMatches")[seq_len(100), seq_len(3)]
+hits <- which(mm, arr.ind = TRUE)
+at <- data.table::data.table(
+  seqnames = as.character(GenomicRanges::seqnames(peaks))[hits[,"row"]],
+  start    = GenomicRanges::start(peaks)[hits[,"row"]],
+  end      = GenomicRanges::end(peaks)[hits[,"row"]],
+  sample   = colnames(mm)[hits[,"col"]],
+  score    = 1L
+)
+res <- genomicRangesMapping(peaks, assayTable = at, byCols = "sample",
+                             scoreCol = "score", type = "equal")
+dim(res)
+}
 \author{
 Emanuel Sonder
 }

@@ -11,6 +11,11 @@
 
 \item{ranges:}{a genomic object of peaks/motifs}
 }
+\value{
+A list with elements `atacFrag` (the input list, filtered to
+seqnames common to both `atacFrag` and `ranges`) and `ranges` (the input
+ranges, filtered the same way).
+}
 \description{
 match the chromosomes between fragments and peaks/motifs
 }

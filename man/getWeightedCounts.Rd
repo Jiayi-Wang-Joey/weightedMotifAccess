@@ -9,7 +9,6 @@ getWeightedCounts(
   atacFrag,
   ranges,
   genome,
-  species,
   fragWeight = FALSE,
   peakWeight = FALSE,
   resize = FALSE,
@@ -34,8 +33,6 @@ getWeightedCounts(
 
 \item{genome}{A \code{BSgenome} object or string (e.g., "hg38") for GC content.}
 
-\item{species}{Character; species name (e.g., "human") for chromosome filtering.}
-
 \item{fragWeight}{Logical; whether to apply fragment-level bias correction.}
 
 \item{peakWeight}{Logical; whether to apply cyclic loess normalization on counts.}
@@ -54,6 +51,13 @@ getWeightedCounts(
 
 \item{aRange}{Numeric; bandwidth for smoothing.}
 
+\item{coerceToGenome}{Logical; whether to coerce the seqlevels style
+(e.g. UCSC vs Ensembl) of \code{ranges}/\code{atacFrag} to match \code{genome}.
+Chromosome filtering (e.g. to standard chromosomes for a given species) is
+left to the caller; see the package vignette for the recommended way to do
+this with \code{\link[GenomeInfoDb]{keepStandardChromosomes}} before calling
+this function.}
+
 \item{...}{Additional arguments passed to internal weighting functions.}
 }
 \value{
@@ -63,6 +67,23 @@ containing assays for different fragment types.
 \description{
 Count the number of fragments in each peak region, with or without
 fragment-level and peak-level weighting (normalization).
+}
+\examples{
+if (requireNamespace("BSgenome.Hsapiens.UCSC.hg38", quietly = TRUE)) {
+  library(BSgenome.Hsapiens.UCSC.hg38)
+  data(NR3C1example, package = "weightedMotifAccess")
+  peaks <- rowRanges(peakSE)
+  set.seed(1)
+  idx <- sample(length(peaks), 200, replace = TRUE)
+  frag <- data.table::data.table(
+    seqnames = as.character(GenomicRanges::seqnames(peaks))[idx],
+    start    = GenomicRanges::start(peaks)[idx],
+    end      = GenomicRanges::start(peaks)[idx] + 199L
+  )
+  se <- getWeightedCounts(files = NULL, atacFrag = list(S1 = frag),
+                          ranges = peaks, genome = BSgenome.Hsapiens.UCSC.hg38)
+  se
+}
 }
 \author{
 Jiayi Wang

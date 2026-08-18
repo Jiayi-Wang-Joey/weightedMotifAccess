@@ -9,11 +9,15 @@
 \arguments{
 \item{atacFrag:}{a list of data.tables that contain the ranges of fragments}
 
-\item{peakRanges:}{a GRange object that contains the ranges of peaks}
+\item{ranges:}{a GRanges object that contains the ranges of peaks or motifs}
 
-\item{motifRanges:}{a GRange object that contains the ranges of motifs,
-check metadata columns
-check seqnames to factor in datatable}
+\item{type:}{either "peaks" or "motifs"; determines which sanity checks
+are applied (e.g. for "motifs", checks that a `motif` metadata column
+is present)}
+}
+\value{
+NULL, invisibly; called for its side effect of raising an error
+if the inputs are malformed.
 }
 \description{
 Sanity check to ensure the input arguments have the correct classes
