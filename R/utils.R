@@ -24,6 +24,11 @@
 #' @importFrom betterChromVAR normalizeDevsForSize
 #'
 #' @examples
+#' dd <- betterChromVAR::getDummyData()
+#' dev <- betterChromVAR::betterChromVAR(dd$counts, dd$motifMatches)
+#' dev$group <- rep(LETTERS[1:2], each=5)
+#' design <- stats::model.matrix(~group, data=SummarizedExperiment::colData(dev))
+#' fit <- fitDeviations(dev, design)
 fitDeviations <- function(dev, design, type=c("norm","deviations","z"),
                           contrasts=NULL, robust=FALSE, ...){
   stopifnot(inherits(dev, "SummarizedExperiment"))

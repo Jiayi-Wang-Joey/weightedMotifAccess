@@ -15,6 +15,7 @@
 #' @returns A `SummarizedExperiment` of deviations for the intersection of 
 #'   all motifs with the bait motif.
 #' @importFrom betterChromVAR betterChromVAR
+#' @importFrom MatrixGenerics colSums
 #' @export
 #' @examples
 #' attach(betterChromVAR::getDummyData())

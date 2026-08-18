@@ -47,7 +47,8 @@ Imports:
     matrixStats,
     epiwraps,
     GenomicAlignments,
-    dplyr
+    dplyr,
+    MatrixGenerics
 Suggests:
     knitr,
     rmarkdown,
