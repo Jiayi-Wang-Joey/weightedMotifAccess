@@ -29,9 +29,9 @@ getInteractionsDeviations <- function(se, annotation, bait, minCount=20, ...){
     annotation <- assay(annotation)
   }
   moi2 <- annotation & annotation[,bait]
-  moi2 <- moi2[,colSums(moi2)>=minCount,drop=FALSE]
+  moi2 <- moi2[,MatrixGenerics::colSums(moi2)>=minCount,drop=FALSE]
   if(ncol(moi2)==0) stop("No interaction passing filtering.")
-  ov <- colSums(moi2)
+  ov <- MatrixGenerics::colSums(moi2)
   dev <- betterChromVAR(se, moi2, ...)
   tot <- colSums(annotation[,colnames(moi2)])
   totBait <- as.integer(tot[bait])

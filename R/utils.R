@@ -1,3 +1,47 @@
+#' fitDeviations
+#' 
+#' A wrapper to fit a model to motif deviations, using limma to estimate 
+#' posterior variability from a trend with the number of matches.
+#'
+#' @param dev A SummarizedExperiment of motif deviations, as produced for
+#'   instance by \code{\link[betterChromVAR]{betterChromVAR}}.
+#' @param design The design matrix of the experiment, as produced for instance 
+#'   \code{\link[limma]{model.matrix}}.
+#' @param type The type of assay to use, either 'norm' (size-normalized 
+#'   z-scores), 'deviations' (background-adjusted motif deviations), or 'z' 
+#'   (z-scores).
+#' @param contrasts Optional contrasts, passed to 
+#'   \code{\link[limma]{contrasts.fit}}.
+#' @param robust Logical, passed to \code{\link[limma]{eBayes}}; whether the 
+#'   fit of the priors should be robust (not recommended).
+#' @param ... Other parameters passed to \code{\link[limma]{lmFit}}.
+#'
+#' @returns A fitted `MArrayLM` object, which can for instance be used with
+#'   limma's \code{\link[limma]{topTable}} function to extract differential
+#'   analysis results.
+#' @export
+#' @importFrom limma lmFit contrasts.fit eBayes
+#' @importFrom betterChromVAR normalizeDevsForSize
+#'
+#' @examples
+fitDeviations <- function(dev, design, type=c("norm","deviations","z"),
+                          contrasts=NULL, robust=FALSE, ...){
+  stopifnot(inherits(dev, "SummarizedExperiment"))
+  stopifnot(!is.null(rowData(dev)$N))
+  type <- match.arg(type)
+  if(!("norm" %in% assayNames(dev)) && type=="norm"){
+    dev <- betterChromVAR::normalizeDevsForSize(dev)
+  }
+  stopifnot(type %in% assayNames(dev))
+  fit <- limma::lmFit(assay(dev, type), design, ...)
+  if(!is.null(contrasts)){
+    fit <- limma::contrasts.fit(fit, contrasts)
+  }
+  fit <- limma::eBayes(fit, trend=sqrt(rowData(dev)$N), robust=robust)
+  fit
+}
+
+
 #' @title .resizeRanges
 #'
 #' @description
