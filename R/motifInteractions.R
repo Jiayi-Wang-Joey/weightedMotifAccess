@@ -15,6 +15,7 @@
 #' @returns A `SummarizedExperiment` of deviations for the intersection of 
 #'   all motifs with the bait motif.
 #' @importFrom betterChromVAR betterChromVAR
+#' @importFrom MatrixGenerics colSums
 #' @export
 #' @examples
 #' attach(betterChromVAR::getDummyData())
@@ -120,6 +121,7 @@ discoverMotifInteractions <- function(dev, group, covar=c(), global=FALSE,
                                       useAssay=c("adjZ","deviations","z")){
   stopifnot(inherits(dev, "SummarizedExperiment"))
   stopifnot(sum(rowData(dev)$isBait)==1)
+  weights <- match.arg(weights)
   useAssay <- match.arg(useAssay)
   bait <- row.names(dev)[which(rowData(dev)$isBait)]
   wBait <- which(row.names(dev)==bait)

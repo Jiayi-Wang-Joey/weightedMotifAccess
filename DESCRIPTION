@@ -1,19 +1,29 @@
-Package: WeightInsertModels
-Title: Differential motif accessibility analysis
-Version: 0.0.2
+Package: weightedMotifAccess
+Title: Differential Motif Accessibility Analysis
+Version: 0.99.0
 Authors@R: c(
     person("Jiayi", "Wang", email = "jiayi.wang2@uzh.ch", role = c("aut", "cre")),
     person("Emanuel", "Sonder", role = "aut"),
     person("Pierre-Luc", "Germain", role = "aut",
            email="pierre-luc.germain@hest.ethz.ch", comment=c(ORCID="0000-0003-3418-4218"))
   )
-Description: A longer paragraph (3-4 sentences) describing the biological 
-    problem your package solves (ATAC-seq fragment weighting and counting).
+Description: Provides tools for quantifying chromatin accessibility at
+    transcription factor motifs from ATAC-seq data, with a focus on
+    correcting for fragment-length and GC-content biases through fragment-
+    and peak-level weighting. It further enables the discovery and
+    characterization of interactions between pairs of motifs, testing whether
+    the accessibility response at co-occurring motif pairs differs from that
+    at either motif alone, and how this depends on the distance between the
+    motifs. The package builds on betterChromVAR for computing bias-corrected
+    motif accessibility deviations, and integrates with standard Bioconductor
+    classes (GRanges, SummarizedExperiment) throughout.
 License: Artistic-2.0
+Depends: R (>= 4.5.0)
+URL: https://github.com/Jiayi-Wang-Joey/weightedMotifAccess
+BugReports: https://github.com/Jiayi-Wang-Joey/weightedMotifAccess/issues
 Encoding: UTF-8
-LazyData: true
-biocViews: Software, ATACSeq, Normalization, Epigenetics, Sequencing
-Imports: 
+biocViews: Software, ATACSeq, Normalization, Epigenetics, Sequencing, MotifDiscovery
+Imports:
     SummarizedExperiment,
     GenomicRanges,
     GenomeInfoDb,
@@ -34,11 +44,21 @@ Imports:
     Matrix,
     fields,
     affy,
-    matrixStats
-Suggests: 
+    matrixStats,
+    epiwraps,
+    GenomicAlignments,
+    dplyr,
+    MatrixGenerics
+Suggests:
     knitr,
     rmarkdown,
     testthat (>= 3.0.0),
-    BiocStyle
+    BiocStyle,
+    BSgenome.Hsapiens.UCSC.hg38,
+    ggplot2,
+    sechm
+Remotes:
+    github::ETHZ-INS/epiwraps
+VignetteBuilder: knitr
 RoxygenNote: 7.3.3
 Config/testthat/edition: 3

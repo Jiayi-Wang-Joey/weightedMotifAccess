@@ -1,5 +1,5 @@
-#source("~/WeightInsertModels/R/utils.R")
-#source("~/WeightInsertModels/R/peakWeight.R")
+#source("~/weightedMotifAccess/R/utils.R")
+#source("~/weightedMotifAccess/R/peakWeight.R")
 #' @title Define fragment type
 #'
 #' @description To classify fragments into nucleosome-free, mononucleosome,
@@ -49,23 +49,25 @@
 #' @import BiocParallel
 #' @importFrom data.table rbindlist as.data.table
 #' @noRd
-
 .getBins <- function(atacFrag,
     nWidthBins = 30,
     nGCBins = 10,
     genome,
-    BPPARAM=BiocParallel::bpparam()) {
+    BPPARAM = BiocParallel::bpparam()) {
+
     print("start binning")
-    fragDts <- BiocParallel::bplapply(atacFrag, BPPARAM=BPPARAM, \(dt){
-        gr <- dtToGr(dt)
+    fragDts <- BiocParallel::bplapply(atacFrag, BPPARAM = BPPARAM, \(dt) {
+        gr <- .dtToGr(dt)
         gr <- .getGCContent(gr, genome = genome)
         dt <- as.data.table(gr)
+        setnames(dt, "fragWidth", "width")
         dt
     })
 
     idCol <- "sample"
     fragDt <- rbindlist(fragDts, idcol=idCol)
-
+    fragDt[, count := 1L]
+    fragDt <- fragDt[!is.na(gc)]
     rm(fragDts)
 
     widthIntervals <- unique(quantile(fragDt$width,
@@ -84,6 +86,41 @@
 
     fragDt
 }
+
+# .getBins <- function(atacFrag,
+#     nWidthBins = 30,
+#     nGCBins = 10,
+#     genome,
+#     BPPARAM=BiocParallel::bpparam()) {
+#     print("start binning")
+#     fragDts <- BiocParallel::bplapply(atacFrag, BPPARAM=BPPARAM, \(dt){
+#         gr <- dtToGr(dt)
+#         gr <- .getGCContent(gr, genome = genome)
+#         dt <- as.data.table(gr)
+#         dt
+#     })
+#
+#     idCol <- "sample"
+#     fragDt <- rbindlist(fragDts, idcol=idCol)
+#
+#     rm(fragDts)
+#
+#     widthIntervals <- unique(quantile(fragDt$width,
+#         probs = seq(0,1,by=1/nWidthBins)))
+#     GCIntervals <-  unique(quantile(fragDt$gc,
+#         probs = seq(0,1,by=1/nGCBins)))
+#
+#
+#     fragDt[,widthBin:=cut(width,
+#         breaks=widthIntervals,
+#         include.lowest=TRUE, labels=FALSE)]
+#     fragDt[,GCBin:=cut(gc,
+#         breaks=GCIntervals,
+#         include.lowest=TRUE, labels=FALSE)]
+#     print("end binning")
+#
+#     fragDt
+# }
 
 
 
@@ -226,12 +263,13 @@
     atacFrag <- .getType(atacFrag, cuts = cuts)
     fragCounts <- lapply(atacFrag, function(frag) {
         types <- names(frag)[grepl("^type_", names(frag))]
+        if (!fragWeight) frag[, count := 1L]
         if (fragWeight) {
-            frag[,count:=weight*count] # remove
+            frag[,count:=weight*count]
             frag[,(types) := lapply(.SD, function(x) x*weight),
                 .SDcols = types]
         }
-        fragGR <- dtToGr(frag)
+        fragGR <- .dtToGr(frag)
         hits <- findOverlaps(fragGR, peakRanges, type = overlap)
         overlaps <- cbind(frag[queryHits(hits),],
             peaks[subjectHits(hits), c("peakID")])
@@ -275,7 +313,6 @@
 #' @param atacFrag A \code{list} of \code{data.table} objects or a \code{GRangesList}.
 #' @param ranges A \code{GRanges} or \code{data.table} object containing peak regions.
 #' @param genome A \code{BSgenome} object or string (e.g., "hg38") for GC content.
-#' @param species Character; species name (e.g., "human") for chromosome filtering.
 #' @param fragWeight Logical; whether to apply fragment-level bias correction.
 #' @param peakWeight Logical; whether to apply cyclic loess normalization on counts.
 #' @param resize Logical; whether to resize peak ranges to a fixed width.
@@ -285,6 +322,12 @@
 #' @param minFrag,maxFrag Integer; fragment length filters.
 #' @param smooth Logical; whether to apply smoothing on fragment weights.
 #' @param aRange Numeric; bandwidth for smoothing.
+#' @param coerceToGenome Logical; whether to coerce the seqlevels style
+#' (e.g. UCSC vs Ensembl) of \code{ranges}/\code{atacFrag} to match \code{genome}.
+#' Chromosome filtering (e.g. to standard chromosomes for a given species) is
+#' left to the caller; see the package vignette for the recommended way to do
+#' this with \code{\link[GenomeInfoDb]{keepStandardChromosomes}} before calling
+#' this function.
 #' @param ... Additional arguments passed to internal weighting functions.
 #' @author Jiayi Wang
 #' @return A \code{\link[SummarizedExperiment]{SummarizedExperiment}} object
@@ -295,6 +338,22 @@
 #' @importFrom GenomicRanges findOverlaps GPos resize GRanges
 #' @importFrom Rsamtools FaFile
 #'
+#' @examples
+#' if (requireNamespace("BSgenome.Hsapiens.UCSC.hg38", quietly = TRUE)) {
+#'   library(BSgenome.Hsapiens.UCSC.hg38)
+#'   data(NR3C1example, package = "weightedMotifAccess")
+#'   peaks <- rowRanges(peakSE)
+#'   set.seed(1)
+#'   idx <- sample(length(peaks), 200, replace = TRUE)
+#'   frag <- data.table::data.table(
+#'     seqnames = as.character(GenomicRanges::seqnames(peaks))[idx],
+#'     start    = GenomicRanges::start(peaks)[idx],
+#'     end      = GenomicRanges::start(peaks)[idx] + 199L
+#'   )
+#'   se <- getWeightedCounts(files = NULL, atacFrag = list(S1 = frag),
+#'                           ranges = peaks, genome = BSgenome.Hsapiens.UCSC.hg38)
+#'   se
+#' }
 #' @export
 #'
 getWeightedCounts <- function(
@@ -302,7 +361,6 @@ getWeightedCounts <- function(
     atacFrag,
     ranges,
     genome,
-    species,
     fragWeight = FALSE,
     peakWeight = FALSE,
     resize = FALSE,
@@ -329,18 +387,16 @@ getWeightedCounts <- function(
 
     .sanityCheck(atacFrag, ranges)
 
-    ranges <- .standardChromosomes(
+    ranges <- .coerceSeqlevelsStyle(
         ranges,
-        species = species,
         genome = genome,
         coerceToGenome = coerceToGenome
     )
 
     atacFrag <- lapply(atacFrag, function(dt) {
-        gr <- dtToGr(dt)
-        gr <- .standardChromosomes(
+        gr <- .dtToGr(dt)
+        gr <- .coerceSeqlevelsStyle(
             gr,
-            species = species,
             genome = genome,
             coerceToGenome = coerceToGenome
         )
@@ -352,6 +408,7 @@ getWeightedCounts <- function(
     res <- .matchSeqlevels(atacFrag, ranges)
     atacFrag <- res$atacFrag
     ranges <- res$ranges
+    seqlengths(ranges) <- seqlengths(genome)[seqlevels(ranges)]
 
     if (resize) {
         ranges <- .resizeRanges(peakRanges = ranges, width = width)
@@ -365,7 +422,6 @@ getWeightedCounts <- function(
         genome = genome,
         smooth = smooth,
         aRange = aRange,
-        species = species,
         nWidthBins = nWidthBins,
         nGCBins = nGCBins,
         peakWeight = peakWeight,

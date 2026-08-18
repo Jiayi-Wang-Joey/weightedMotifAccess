@@ -53,3 +53,10 @@ R/arch/**
 .Rbuildignore
 WeightInsertModels.BiocCheck/
 .gitignore
+ ._.claud
+.claude/
+R/._utils.R
+**/._*
+**/**/arch
+._*
+.gitignore

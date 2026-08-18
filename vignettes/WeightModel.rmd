@@ -1,0 +1,106 @@
+---
+title: "Weight Model vignette"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{weightedMotifAccess}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+## Dependencies
+
+```{r setup}
+suppressPackageStartupMessages({
+    library(weightedMotifAccess)
+    library(SummarizedExperiment)
+    library(GenomeInfoDb)
+    library(BSgenome.Hsapiens.UCSC.hg38)
+})
+```
+
+## Load data
+
+`getWeightedCounts()` expects peak regions (as a `GRanges`) and, for each
+sample, ATAC-seq fragments (as a `data.table` with `seqnames`/`start`/`end`
+columns). To keep this vignette self-contained and reproducible on any
+machine (including Bioconductor's build servers), we reuse the peak
+coordinates and sample names bundled with the package (`NR3C1example`) and
+simulate fragments around them, rather than reading real fragment/peak files
+from disk.
+
+```{r load-data}
+data(NR3C1example, package = "weightedMotifAccess")
+peaks <- rowRanges(peakSE)[seq_len(2000)]
+genome <- BSgenome.Hsapiens.UCSC.hg38
+species <- organism(genome)
+
+makeFrags <- function(n) {
+    idx <- sample(length(peaks), n, replace = TRUE)
+    s <- start(peaks)[idx]
+    # vary fragment widths so all default length categories (see `cuts`
+    # in `?getWeightedCounts`) are represented
+    widths <- rep(c(80L, 200L, 400L), length.out = n)
+    data.table::data.table(
+        seqnames = as.character(seqnames(peaks))[idx],
+        start    = pmax(1L, s),
+        end      = pmax(1L, s + widths - 1L)
+    )
+}
+set.seed(1)
+atacFrag <- setNames(
+    lapply(colnames(peakSE), function(x) makeFrags(4000)),
+    colnames(peakSE)
+)
+head(atacFrag[[1]])
+```
+
+## Filter to standard chromosomes
+
+`getWeightedCounts()` does not filter chromosomes internally: this is left
+to the caller, so you can decide exactly which chromosomes/contigs to keep
+for your organism. We recommend filtering both the peaks and the fragments
+to standard chromosomes before calling the function, e.g. with
+`GenomeInfoDb::keepStandardChromosomes()`:
+
+```{r filter-chromosomes}
+peaks <- keepStandardChromosomes(peaks, species = species,
+                                  pruning.mode = "coarse")
+atacFrag <- lapply(atacFrag, function(dt) {
+    gr <- GenomicRanges::makeGRangesFromDataFrame(dt)
+    gr <- keepStandardChromosomes(gr, species = species,
+                                   pruning.mode = "coarse")
+    data.table::as.data.table(gr)
+})
+```
+
+## Get origin (unweighted) count matrix
+
+```{r unweighted-counts}
+se <- getWeightedCounts(files = NULL,
+    atacFrag = atacFrag,
+    ranges = peaks,
+    genome = genome,
+    resize = TRUE)
+
+assay(se)[1:5,1:5]
+```
+
+## Get fragWeight and peakWeight count matrix
+
+```{r weighted-counts}
+weightSE <- getWeightedCounts(files = NULL,
+    atacFrag = atacFrag,
+    ranges = peaks,
+    genome = genome,
+    resize = TRUE,
+    fragWeight = TRUE,
+    peakWeight = TRUE)
+
+assay(weightSE)[1:5,1:5]
+```
+
+## Session info
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
