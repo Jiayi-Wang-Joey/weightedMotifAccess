@@ -11,8 +11,7 @@ differential motif accessibility analysis from ATAC-seq data:
   assigning weights to individual fragments, followed by cyclic loess
   normalization of peak weights to correct for enrichment bias. This
   produces an unbiased peak-by-sample accessibility matrix that can be used
-  both for differential motif accessibility analysis (via
-  [betterChromVAR](https://github.com/ETHZ-INS/betterChromVAR)) and for
+  both for differential motif accessibility analysis and for
   broader downstream analyses at the peak level, such as differential
   accessibility testing or bias-corrected coverage profiles for
   visualization.
@@ -28,17 +27,13 @@ The package integrates with standard Bioconductor classes (`GRanges`,
 
 ## Installation
 
-`weightedMotifAccess` depends on `betterChromVAR` and `epiwraps`, which are
-not on Bioconductor and must be installed from GitHub first:
+`weightedMotifAccess` is not on Bioconductor yet and must be installed from GitHub first:
 
 ```r
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
 BiocManager::install("remotes")
-remotes::install_github("ETHZ-INS/betterChromVAR")
-remotes::install_github("ETHZ-INS/epiwraps")
-
 remotes::install_github("Jiayi-Wang-Joey/weightedMotifAccess")
 ```
 
