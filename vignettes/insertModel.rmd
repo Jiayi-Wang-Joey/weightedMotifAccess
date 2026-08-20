@@ -1,0 +1,85 @@
+---
+title: "Insertion weights vignette"
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{weightedMotifAccess}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+## Dependencies
+
+```{r setup}
+suppressPackageStartupMessages({
+    library(weightedMotifAccess)
+    library(SummarizedExperiment)
+    library(betterChromVAR)
+})
+```
+
+## Generate dummy data
+
+`weightedInsertions()` expects 3 inputs: 1) the filepaths to BAM or fragment 
+files for each sample (`lf` argument), 2) the peak regions (as a `GRanges`, we
+recommend standardizing their width and filtering for autosomal chromosomes), 
+and 3) the motif matching regions.
+
+For the purpose of this example, we'll use (twice) an example bam file from the 
+`r BiocStyle::Biocpkg("Rsamtools")` package, and generate dummy data for the 
+rest:
+
+```{r load-data}
+bam <- system.file("extdata", "ex1.bam", package="Rsamtools")
+bams <- c(sample1=bam, sample2=bam)
+# create regions of interest
+peaks <- GRanges(c("seq1","seq1","seq2"), IRanges(c(400,900,500), width=100))
+motifMatches <- GRanges(c("seq1","seq1","seq2"), IRanges(c(450,950,550), width=10),
+                        motif_id=c("A","A","B"))
+```
+
+## Get the weighted insertion counts
+
+We can then call the `weightedInsertions()` function:
+
+```{r weightedInsertions}
+data <- weightedInsertions(bams, peaks, motifMatches=motifMatches, shift=TRUE)
+
+sapply(data, class)
+```
+
+See `?weightedInsertions` for a description of each element in the output.
+
+## Using betterChromVAR on the weighted insertion counts
+
+To apply `r BiocStyle::Biocpkg("betterChromVAR")` on the weighted insertion 
+counts, we first need to add the GC bias in the (unweighted) counts object 
+(i.e. `data$peakCounts`). This would normally be done with 
+`betterChromVAR::addGCBias()`, but since this is dummy data, we'll set dummy 
+values:
+
+```{r, gc}
+rowData(data$peakCounts)$bias <- rnorm(3, 0.5, 0.1)
+```
+
+We would then run a weight-friendly version of betterChromVAR's deviation 
+computation, filtering out any eventual peak with zero counts across samples:
+
+```{r}
+w <- which(rowSums(assay(data$peakCounts)) > 0)
+dev <- betterChromVAR::computeDeviationsWeighted(
+          weightedMotifCounts = data$wInsCounts,
+          unweightedPeakCounts = data$peakCounts[w,],
+          annotations = data$peakAnnotation[w,])
+dev
+```
+
+The resulting object is a `r BiocStyle::Biocpkg("SummarizedExperiment")` object,
+as produced by the other `r BiocStyle::Biocpkg("betterChromVAR")` method,
+containing normalized motif deviations and z-scores based on the weighted 
+insertion counts.
+
+## Session info
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
