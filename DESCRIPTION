@@ -30,7 +30,6 @@ Imports:
     IRanges,
     Rsamtools,
     TFBSTools,
-    chromVAR,
     betterChromVAR,
     motifmatchr,
     universalmotif,
