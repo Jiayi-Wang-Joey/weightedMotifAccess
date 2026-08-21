@@ -20,13 +20,40 @@ suppressPackageStartupMessages({
 
 ## Load data
 
-`getWeightedCounts()` expects peak regions (as a `GRanges`) and, for each
-sample, ATAC-seq fragments (as a `data.table` with `seqnames`/`start`/`end`
-columns). To keep this vignette self-contained and reproducible on any
-machine (including Bioconductor's build servers), we reuse the peak
-coordinates and sample names bundled with the package (`NR3C1example`) and
-simulate fragments around them, rather than reading real fragment/peak files
-from disk.
+`getWeightedCounts()` expects peak regions (as a `GRanges`) and, in the `atac`
+argument, the ATAC-seq fragments of each sample. In most cases the simplest
+thing to do is to point `atac` directly at your files:
+
+```{r file-input, eval=FALSE}
+se <- getWeightedCounts(
+    atac = c(sample1 = "sample1.fragments.tsv.gz",
+             sample2 = "sample2.fragments.tsv.gz"),
+    ranges = peaks,
+    genome = genome)
+```
+
+`atac` accepts, one entry per sample:
+
+* a named character vector of **file paths** — `.bam` (paired-end; fragments
+  are assembled from the read pairs and ATAC-shifted), `.bed`, `.tsv` or
+  `.txt` (optionally `.gz`-compressed; the first three columns are read as
+  chromosome, start and end), or `.rds`;
+* a named list of **`data.table`s** (or `data.frame`s) with
+  `seqnames`/`start`/`end` columns (`chr` is accepted instead of `seqnames`);
+* a named list of **`GRanges`**, or a `GRangesList`.
+
+The names become the sample names of the returned object; if you don't
+provide any, they are derived from the file names. For a single sample the
+object can be passed on its own, without wrapping it in a list — a lone
+`data.table`, `GRanges` or file path all work.
+
+Only the coordinate columns are used: any further columns are ignored, and
+any leading `#` comment lines are skipped.
+
+To keep this vignette self-contained and reproducible on any machine
+(including Bioconductor's build servers), we don't read real files from disk:
+we instead reuse the peak coordinates and sample names bundled with the
+package (`NR3C1example`) and simulate fragments around them as `data.table`s.
 
 ```{r load-data}
 data(NR3C1example, package = "weightedMotifAccess")
@@ -60,7 +87,9 @@ head(atacFrag[[1]])
 to the caller, so you can decide exactly which chromosomes/contigs to keep
 for your organism. We recommend filtering both the peaks and the fragments
 to standard chromosomes before calling the function, e.g. with
-`GenomeInfoDb::keepStandardChromosomes()`:
+`GenomeInfoDb::keepStandardChromosomes()`. (When passing file paths, only the
+`peaks` half of this applies — fragments on chromosomes absent from `peaks`
+are dropped internally anyway.)
 
 ```{r filter-chromosomes}
 peaks <- keepStandardChromosomes(peaks, species = species,
@@ -76,8 +105,7 @@ atacFrag <- lapply(atacFrag, function(dt) {
 ## Get origin (unweighted) count matrix
 
 ```{r unweighted-counts}
-se <- getWeightedCounts(files = NULL,
-    atacFrag = atacFrag,
+se <- getWeightedCounts(atac = atacFrag,
     ranges = peaks,
     genome = genome,
     resize = TRUE)
@@ -88,8 +116,7 @@ assay(se)[1:5,1:5]
 ## Get fragWeight and peakWeight count matrix
 
 ```{r weighted-counts}
-weightSE <- getWeightedCounts(files = NULL,
-    atacFrag = atacFrag,
+weightSE <- getWeightedCounts(atac = atacFrag,
     ranges = peaks,
     genome = genome,
     resize = TRUE,

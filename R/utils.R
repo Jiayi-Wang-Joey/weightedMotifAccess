@@ -167,6 +167,8 @@ fitDeviations <- function(dev, design, type=c("norm","deviations","z"),
 #' @return a GRanges objects with an additional metadata column gc that contains
 #' GC content
 #' @author  Jiayi Wang
+#' @importFrom GenomeInfoDb keepSeqlevels
+#' @importFrom GenomicRanges makeGRangesFromDataFrame
 .getGCContent <- function(gr, genome) {
     if (is.data.table(gr) || is.data.frame(gr)) {
         gr <- makeGRangesFromDataFrame(as.data.frame(gr))
@@ -288,7 +290,8 @@ fitDeviations <- function(dev, design, type=c("norm","deviations","z"),
                          filterLength=FALSE,
                          minFrag=30, maxFrag=3000){
   if(is.character(data)){
-    if(grepl(".bam", basename(data), fixed=TRUE))
+    f <- basename(data)
+    if(grepl("\\.bam$", f, ignore.case=TRUE))
     {
       param <- Rsamtools::ScanBamParam(what=c('pos', 'qwidth', 'isize'))
       readPairs <- GenomicAlignments::readGAlignmentPairs(data, param=param)
@@ -304,7 +307,7 @@ fitDeviations <- function(dev, design, type=c("norm","deviations","z"),
       seqDat <- as.data.table(seqDat)
       setnames(seqDat, c("seqnames"), c("chr"))
     }
-    else if(grepl(".bed", basename(data), fixed=TRUE)){
+    else if(grepl("\\.bed(\\.(gz|bgz))?$", f, ignore.case=TRUE)){
       if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
       else{
 
@@ -324,7 +327,7 @@ fitDeviations <- function(dev, design, type=c("norm","deviations","z"),
         seqDat <- readBed(data)
       }
     }
-    else if(grepl(".tsv", basename(data), fixed=TRUE)){
+    else if(grepl("\\.(tsv|txt)(\\.(gz|bgz))?$", f, ignore.case=TRUE)){
       if(readAll) seqDat <- fread(data, stringsAsFactors=TRUE)
       else{
         seqDat <- fread(data, select=c(1:3),
@@ -332,10 +335,12 @@ fitDeviations <- function(dev, design, type=c("norm","deviations","z"),
                         stringsAsFactors=TRUE)}
       if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
     }
-    else if(grepl(".rds", basename(data), fixed=TRUE)){
+    else if(grepl("\\.rds$", f, ignore.case=TRUE)){
       seqDat <- as.data.table(readRDS(data))
       if("seqnames" %in% colnames(seqDat)) setnames(seqDat, "seqnames", "chr")
     }
+    else stop("Cannot determine the format of '", data, "'. Files should be ",
+              ".bam, .bed, .tsv, .txt (optionally .gz) or .rds.")
   }
   else{
     seqDat <- as.data.table(data)
@@ -390,7 +395,8 @@ fitDeviations <- function(dev, design, type=c("norm","deviations","z"),
 #'
 #' @name genomicRangesMapping
 #' @param refRanges GRanges object with reference coordinates
-#' @param assayTable  List of [GenomicRanges::GRanges-class], [data.table::data.table], data.frames or paths to .bed /. bam files
+#' @param assayTable  List of [GenomicRanges::GRanges-class], [data.table::data.table], data.frames, or paths to
+#' .bam, .bed, .tsv, .txt (optionally .gz-compressed) or .rds files
 #' containing assay data (e.g. fragments, motif scores, peaks) to be aggregated across the reference ranges provided.
 #' Need to contain genomic coordinates (e.g. a chr/seqnames, start and end column).
 #' @param byCols Variables across which the assays will be aggregated.
@@ -420,6 +426,7 @@ fitDeviations <- function(dev, design, type=c("norm","deviations","z"),
 #' @importFrom S4Vectors split
 #' @author Emanuel Sonder
 #' @examples
+#' library(SummarizedExperiment)
 #' data(NR3C1example, package = "weightedMotifAccess")
 #' peaks <- rowRanges(peakSE)[seq_len(100)]
 #' mm <- assay(motifMatches, "motifMatches")[seq_len(100), seq_len(3)]

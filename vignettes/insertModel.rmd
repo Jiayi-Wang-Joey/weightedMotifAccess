@@ -1,5 +1,5 @@
 ---
-title: "Insertion weights vignette"
+title: "Insert Model vignette"
 output: BiocStyle::html_document
 vignette: >
   %\VignetteIndexEntry{weightedMotifAccess}

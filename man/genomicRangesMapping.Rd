@@ -21,7 +21,8 @@ genomicRangesMapping(
 \arguments{
 \item{refRanges}{GRanges object with reference coordinates}
 
-\item{assayTable}{List of [GenomicRanges::GRanges-class], [data.table::data.table], data.frames or paths to .bed /. bam files
+\item{assayTable}{List of [GenomicRanges::GRanges-class], [data.table::data.table], data.frames, or paths to
+.bam, .bed, .tsv, .txt (optionally .gz-compressed) or .rds files
 containing assay data (e.g. fragments, motif scores, peaks) to be aggregated across the reference ranges provided.
 Need to contain genomic coordinates (e.g. a chr/seqnames, start and end column).}
 
@@ -58,6 +59,7 @@ table will have dimension ref coords x byCols (or ref coord x byCols`[1]` x byCo
 ByCols can be for instance cell type labels and/or transcription factor names.
 }
 \examples{
+library(SummarizedExperiment)
 data(NR3C1example, package = "weightedMotifAccess")
 peaks <- rowRanges(peakSE)[seq_len(100)]
 mm <- assay(motifMatches, "motifMatches")[seq_len(100), seq_len(3)]

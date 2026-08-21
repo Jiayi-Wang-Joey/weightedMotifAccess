@@ -5,8 +5,7 @@
 \title{Count (Weighted) Fragments in Peak Regions}
 \usage{
 getWeightedCounts(
-  files,
-  atacFrag,
+  atac,
   ranges,
   genome,
   fragWeight = FALSE,
@@ -25,9 +24,20 @@ getWeightedCounts(
 )
 }
 \arguments{
-\item{files}{A character vector of paths to fragment files (e.g., BED or TSV).}
-
-\item{atacFrag}{A \code{list} of \code{data.table} objects or a \code{GRangesList}.}
+\item{atac}{The ATAC-seq fragments, one entry per sample. Either a named
+\code{list} of \code{data.table}s (or \code{data.frame}s) with
+\code{seqnames} (or \code{chr}), \code{start} and \code{end} columns; a named
+\code{list} of \code{GRanges} or a \code{\link[GenomicRanges]{GRangesList}};
+or a named character vector of file paths. Recognized file formats are
+\code{.bam} (paired-end; fragments are assembled from read pairs and
+ATAC-shifted), \code{.bed}/\code{.tsv}/\code{.txt} (optionally
+\code{.gz}-compressed; the first three columns are read as chromosome, start
+and end, and leading \code{#} comment lines are skipped) and \code{.rds}
+(holding a \code{GRanges} or a \code{data.table}). Only the coordinates are
+used; any further columns are ignored.
+The names are used as sample names; if absent, they are derived from the file
+names. For a single sample the bare object may be passed unwrapped, i.e. one
+\code{data.table}/\code{data.frame}, one \code{GRanges}, or one file path.}
 
 \item{ranges}{A \code{GRanges} or \code{data.table} object containing peak regions.}
 
@@ -71,6 +81,7 @@ fragment-level and peak-level weighting (normalization).
 \examples{
 if (requireNamespace("BSgenome.Hsapiens.UCSC.hg38", quietly = TRUE)) {
   library(BSgenome.Hsapiens.UCSC.hg38)
+  library(SummarizedExperiment)
   data(NR3C1example, package = "weightedMotifAccess")
   peaks <- rowRanges(peakSE)
   set.seed(1)
@@ -80,7 +91,7 @@ if (requireNamespace("BSgenome.Hsapiens.UCSC.hg38", quietly = TRUE)) {
     start    = GenomicRanges::start(peaks)[idx],
     end      = GenomicRanges::start(peaks)[idx] + 199L
   )
-  se <- getWeightedCounts(files = NULL, atacFrag = list(S1 = frag),
+  se <- getWeightedCounts(atac = list(S1 = frag),
                           ranges = peaks, genome = BSgenome.Hsapiens.UCSC.hg38)
   se
 }

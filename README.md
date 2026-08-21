@@ -67,13 +67,10 @@ library(BSgenome.Hsapiens.UCSC.hg38)
 data(NR3C1example, package = "weightedMotifAccess")
 peaks <- rowRanges(peakSE)
 
-# ATAC-seq fragments per sample, as a data.table with
-# seqnames/start/end columns (or paths to fragment/bam files)
-atacFrag <- list(sample1 = myFragmentsDataTable)
-
 se <- getWeightedCounts(
-    files = NULL,
-    atacFrag = atacFrag,
+    # one entry per sample; see below for the other accepted forms
+    atac = c(sample1 = "sample1.fragments.tsv.gz",
+             sample2 = "sample2.fragments.tsv.gz"),
     ranges = peaks,
     genome = BSgenome.Hsapiens.UCSC.hg38,
     fragWeight = TRUE,
@@ -81,6 +78,37 @@ se <- getWeightedCounts(
 )
 se
 ```
+
+### Fragment input
+
+The `atac` argument takes one entry per sample, in whichever form is most
+convenient:
+
+- a named character vector of **file paths**: `.bam` (paired-end; fragments
+  are assembled from the read pairs and ATAC-shifted), `.bed`, `.tsv` or
+  `.txt` (optionally `.gz`-compressed; the first three columns are read as
+  chromosome, start and end, and any leading `#` comment lines are skipped),
+  or `.rds`;
+- a named list of **`data.table`s** (or `data.frame`s) with
+  `seqnames`/`start`/`end` columns (`chr` is accepted instead of `seqnames`);
+- a named list of **`GRanges`**, or a `GRangesList`.
+
+The names are used as sample names; if you don't provide any, they are
+derived from the file names. If you only have one sample, you can skip the
+list and pass the object directly:
+
+```r
+se <- getWeightedCounts(atac = myFragmentsDataTable, ranges = peaks,
+                        genome = BSgenome.Hsapiens.UCSC.hg38)
+```
+
+Only the coordinate columns are used; any further columns are ignored.
+
+`weightedInsertions()` also takes one entry per sample, through its `lf`
+argument, but is stricter: because it streams over the genome chromosome by
+chromosome, it only accepts **paths to indexed files** — either indexed
+`.bam` files, or tabix-indexed fragment files (see `Rsamtools::bgzip()` and
+`Rsamtools::indexTabix()`).
 
 ## Getting help
 
