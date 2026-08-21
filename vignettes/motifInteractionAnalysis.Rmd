@@ -38,9 +38,7 @@ glucocorticoid receptor (GCR), encoded by the NR3C1 gene.
 First, we load the package and the dataset:
 
 ```{r}
-devtools::load_all("../")
-#data("NR3C1example.RData")
-load("../data/NR3C1example.RData", verbose=TRUE)
+data("NR3C1example", package="weightedMotifAccess")
 peakSE
 motifMatches
 ```
@@ -56,7 +54,7 @@ First, we illustrate the effect of the treatment of GCR motif accessibility by
 computing standard motif deviations, followed by differential testing
 ^[If you are not familiar with such differential testing, see the `r Biocpkg("limma")` documentation.]:
 
-```{r}
+```{r, message=FALSE}
 library(betterChromVAR)
 dev <- betterChromVAR(peakSE, motifMatches)
 dev
@@ -74,7 +72,7 @@ conditions, as expected, closely followed by the mineralocorticoid receptor
 (MCR), which has a motif very similar to GCR. We could also look at the pattern
 across samples for top motifs:
 
-```{r}
+```{r, message=FALSE}
 library(sechm)
 sechm(dev, head(row.names(DAA)), gaps_at="group")
 ```
@@ -93,7 +91,8 @@ GCR sites in general.
 To this end, we first compute deviations at the intersection between GCR and 
 each other motif:
 
-```{r}
+```{r, message=FALSE}
+library(weightedMotifAccess)
 # get deviations for motif intersections:
 idev <- getInteractionsDeviations(peakSE, motifMatches, bait="GCR", minCount = 10)
 ```
@@ -134,6 +133,7 @@ intervals of each other.
 ```{r, fig.width=10, fig.height=4}
 # we load the genome
 library(BSgenome.Hsapiens.UCSC.hg38)
+# we load the motifs we're interested in
 
 # we precompute the betterChromVAR background to save computing time in case
 # we check many interactions:
@@ -145,7 +145,7 @@ bg <- computeBackgrounds(peakSE, getBackgroundBins(peakSE))
 dd <- lapply(c("JUND", "CTCFL"), \(mo){
   didev <- exploreMotifInteraction(peakSE, motifs[c("GCR", mo)], bg = bg,
                                    genome=BSgenome.Hsapiens.UCSC.hg38)
-  d <- meltSE(dev, row.names(didev))
+  d <- meltSE(didev, row.names(didev))
   d$feature <- factor(d$feature, row.names(didev))
   d$query <- mo
   d
@@ -157,6 +157,7 @@ ggplot(dd, aes(feature, norm)) + geom_hline(yintercept=0, linetype="dashed") +
   theme_bw() + labs(x="Site type", y="Adjusted z-scores") + 
   theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
 ```
+
 On the left of the first panel, we see the change in deviation upon 
 ligand-based GCR activation (i.e. NR3C1 group vs CTRL) in sites harboring the 
 GCR motif (independently of JUND status). Beside it, we see the same in sites 
