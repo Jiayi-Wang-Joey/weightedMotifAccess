@@ -13,19 +13,51 @@ vignette: >
 suppressPackageStartupMessages({
     library(weightedMotifAccess)
     library(SummarizedExperiment)
+    library(GenomicRanges)
+    library(Rsamtools)
     library(betterChromVAR)
 })
 ```
 
+## Inputs
+
+`weightedInsertions()` expects three inputs:
+
+1. `lf`: the ATAC-seq fragments of each sample. Unlike `getWeightedCounts()`,
+   which also accepts in-memory objects, `weightedInsertions()` streams over
+   the genome chromosome by chromosome and therefore only accepts **paths to
+   indexed files** — either indexed `.bam` files, or `bgzip`-compressed,
+   tabix-indexed fragment files. The names of `lf` become the sample names.
+2. `peaks`: the peak regions, as a `GRanges`. We recommend standardizing
+   their width and restricting them to the standard chromosomes.
+3. `motifMatches`: the motif matches, as a `GRanges` with a `motif_id`
+   metadata column.
+
+### Indexing plain fragment files
+
+A plain, uncompressed BED/TSV file cannot be streamed. If that is what you
+have, compress and index it once and pass the resulting `.gz` path:
+
+```{r indexing, eval=FALSE}
+indexed <- bgzip("sample1.fragments.bed", dest = "sample1.fragments.bed.gz")
+indexTabix(indexed, format = "bed")
+```
+
+### The `shift` argument
+
+Tn5 inserts a few bases inside each fragment end, so coordinates have to be
+shifted before insertions are counted. Whether you need this depends on your
+input: raw `.bam` files are unshifted and need `shift = TRUE`, whereas many
+published fragment files have already been shifted by the pipeline that
+produced them and need `shift = FALSE`. If you leave `shift` unspecified it
+defaults to `TRUE` when all files are bams, and a message reports that it did
+so. Getting this wrong displaces the footprint by a few bases, so it is worth
+checking how your fragment files were generated.
+
 ## Generate dummy data
 
-`weightedInsertions()` expects 3 inputs: 1) the filepaths to BAM or fragment 
-files for each sample (`lf` argument), 2) the peak regions (as a `GRanges`, we
-recommend standardizing their width and filtering for autosomal chromosomes), 
-and 3) the motif matching regions.
-
-For the purpose of this example, we'll use (twice) an example bam file from the 
-`r BiocStyle::Biocpkg("Rsamtools")` package, and generate dummy data for the 
+For the purpose of this example, we'll use (twice) an example bam file from the
+`r BiocStyle::Biocpkg("Rsamtools")` package, and generate dummy data for the
 rest:
 
 ```{r load-data}
@@ -35,6 +67,25 @@ bams <- c(sample1=bam, sample2=bam)
 peaks <- GRanges(c("seq1","seq1","seq2"), IRanges(c(400,900,500), width=100))
 motifMatches <- GRanges(c("seq1","seq1","seq2"), IRanges(c(450,950,550), width=10),
                         motif_id=c("A","A","B"))
+```
+
+On real data you would prepare the two `GRanges` roughly as below. Note in
+particular that the motif matches must use the same seqlevels style as the
+peaks (which in turn has to match the fragment files), and that restricting
+them to the peaks up front saves a lot of work:
+
+```{r prepare-ranges, eval=FALSE}
+species <- "Homo_sapiens"
+peaks <- rtracklayer::import("peaks.narrowPeak")
+peaks <- keepStandardChromosomes(peaks, species = species,
+                                 pruning.mode = "coarse")
+peaks <- resize(peaks, width = 300, fix = "center")
+
+motifMatches <- readRDS("motifMatches.rds")
+motifMatches <- keepStandardChromosomes(motifMatches, species = species,
+                                        pruning.mode = "coarse")
+seqlevelsStyle(motifMatches) <- seqlevelsStyle(peaks)[1]
+motifMatches <- subsetByOverlaps(motifMatches, peaks)
 ```
 
 ## Get the weighted insertion counts
@@ -51,17 +102,25 @@ See `?weightedInsertions` for a description of each element in the output.
 
 ## Using betterChromVAR on the weighted insertion counts
 
-To apply `r BiocStyle::Biocpkg("betterChromVAR")` on the weighted insertion 
-counts, we first need to add the GC bias in the (unweighted) counts object 
-(i.e. `data$peakCounts`). This would normally be done with 
-`betterChromVAR::addGCBias()`, but since this is dummy data, we'll set dummy 
-values:
+To apply `r BiocStyle::Biocpkg("betterChromVAR")` on the weighted insertion
+counts, we first need to add the GC bias in the (unweighted) counts object
+(i.e. `data$peakCounts`). On real data this is done with
+`betterChromVAR::addGCBias()`, which needs the `BSgenome` of your organism and
+the same seqlevels style as that genome:
+
+```{r gc-real, eval=FALSE}
+seqlevelsStyle(data$peakCounts) <- "UCSC"
+data$peakCounts <- addGCBias(data$peakCounts,
+                             genome = BSgenome.Hsapiens.UCSC.hg38)
+```
+
+Since this is dummy data on a toy genome, we'll instead set dummy values:
 
 ```{r, gc}
 rowData(data$peakCounts)$bias <- rnorm(3, 0.5, 0.1)
 ```
 
-We would then run a weight-friendly version of betterChromVAR's deviation 
+We would then run a weight-friendly version of betterChromVAR's deviation
 computation, filtering out any eventual peak with zero counts across samples:
 
 ```{r}
@@ -75,8 +134,46 @@ dev
 
 The resulting object is a `r BiocStyle::Biocpkg("SummarizedExperiment")` object,
 as produced by the other `r BiocStyle::Biocpkg("betterChromVAR")` method,
-containing normalized motif deviations and z-scores based on the weighted 
+containing normalized motif deviations and z-scores based on the weighted
 insertion counts.
+
+## Putting it together
+
+For reference, this is the whole analysis on real data:
+
+```{r full-workflow, eval=FALSE}
+library(BSgenome.Hsapiens.UCSC.hg38)
+genome <- BSgenome.Hsapiens.UCSC.hg38
+species <- "Homo_sapiens"
+
+# 1. fragments: one indexed file per sample
+lf <- c(sample1 = "sample1.bam", sample2 = "sample2.bam")
+
+# 2. peaks and motif matches, on matching seqlevels
+peaks <- rtracklayer::import("peaks.narrowPeak")
+peaks <- keepStandardChromosomes(peaks, species = species,
+                                 pruning.mode = "coarse")
+peaks <- resize(peaks, width = 300, fix = "center")
+
+motifMatches <- readRDS("motifMatches.rds")
+motifMatches <- keepStandardChromosomes(motifMatches, species = species,
+                                        pruning.mode = "coarse")
+seqlevelsStyle(motifMatches) <- seqlevelsStyle(peaks)[1]
+motifMatches <- subsetByOverlaps(motifMatches, peaks)
+
+# 3. weighted insertion counts (shift=TRUE for unshifted bams)
+res <- weightedInsertions(lf, peaks, motifMatches, shift = TRUE, ncores = 1)
+
+# 4. GC bias on the unweighted peak counts, dropping empty peaks
+pc <- res$peakCounts
+seqlevelsStyle(pc) <- "UCSC"
+w <- which(rowSums(assay(pc)) > 0)
+pc <- addGCBias(pc[w, ], genome = genome)
+
+# 5. motif deviations
+dev <- betterChromVAR::computeDeviationsWeighted(
+    res$wInsCounts, pc, annotations = res$peakAnnotation[w, ])
+```
 
 ## Session info
 
