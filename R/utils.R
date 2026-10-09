@@ -672,3 +672,29 @@ genomicRangesMapping <- function(refRanges,
   gc()
   return(overlapTable)
 }
+
+#' views2Matrix
+#'
+#' converts a RleViews or RleViewsList with views of the same width to a matrix,
+#' setting out-of-bounds regions to NA (or `padVal`).
+#'
+#' @param v A `RleViews` or `RleViewsList` object with views of the same width.
+#' @param padVal The value to assign to out-of-bound regions.
+#'
+#' @return A numeric matrix.
+#' @export
+#'
+#' @examples
+#' # we create an example RleViews with out-of-bound regions:
+#' library(IRanges)
+#' co <- Rle(values=c(0,1,0), lengths=c(100,50,20))
+#' v <- Views(co, c(25,150),c(50,175))
+#' # convert to matrix
+#' views2Matrix(v)
+views2Matrix <- function(v, padVal=NA_integer_){
+  if(!is(v, "RleViewsList")) v <- RleViewsList(v)
+  ws <- width(v)[[head(which(lengths(v)>0),1)]][[1]]
+  stopifnot(all(unlist(width(v))==ws))
+  x <- Reduce(c, lapply(v[lengths(v)>0], padVal=padVal, FUN=.view2paddedAL))
+  matrix(unlist(x), byrow=TRUE, ncol=ws)
+}
