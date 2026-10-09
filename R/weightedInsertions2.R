@@ -35,7 +35,6 @@
 #' \item{\code{peakAnnotation}:}{A sparse logical matrix of motif (column) annotations for each peak (row).}
 #' }
 #' @export
-#' @importFrom epiwraps bamChrChunkApply tabixChrApply views2Matrix
 #' @importFrom BiocParallel bplapply bpstop MulticoreParam
 #' @importFrom GenomicRanges sort reduce resize start end seqnames granges
 #' @importFrom GenomicRanges countOverlaps coverage distanceToNearest
@@ -97,14 +96,14 @@ weightedInsertions <- function(lf, peaks, motifMatches, extension=200L,
     
     res <- bplapply(lf, BPPARAM=BP, FUN=\(f){
       if(grepl("bam$", f, ignore.case=TRUE)){
-        rl <- epiwraps::bamChrChunkApply(f, paired=TRUE, progress=FALSE,
-                                         FUN=.wiProcessChunk, shift=shift,
-                                         extension=extension, p2=p2, peaks=peaks,
-                                         reduced=reduced, BPPARAM=SerialParam())
+        rl <- bamChrChunkApply(f, paired=TRUE, progress=FALSE,
+                               FUN=.wiProcessChunk, shift=shift,
+                               extension=extension, p2=p2, peaks=peaks,
+                               reduced=reduced, BPPARAM=SerialParam())
       }else{
-        rl <- epiwraps::tabixChrApply(f, fn=.wiProcessChunk, shift=shift,
-                                      extension=extension, p2=p2, peaks=peaks,
-                                      reduced=reduced, BPPARAM=SerialParam())
+        rl <- tabixChrApply(f, fn=.wiProcessChunk, shift=shift,
+                            extension=extension, p2=p2, peaks=peaks,
+                            reduced=reduced, BPPARAM=SerialParam())
       }
       rl <- rl[!sapply(rl, is.null)]
       bigmat <- do.call(rbind, lapply(rl, \(x) x$prof))
@@ -184,7 +183,7 @@ weightedInsertions <- function(lf, peaks, motifMatches, extension=200L,
   w2 <- unlist(split(w,seqnames(windows),drop=FALSE)[chrs])
 
   v <- Views(cov, split(ranges(windows),seqnames(windows),drop=FALSE)[chrs])
-  mat <- epiwraps:::views2Matrix(v, 0L)
+  mat <- views2Matrix(v, 0L)
 
   neg <- which(strand(p2[w2,])=="-")
   mat[neg,] <- mat[neg,rev(seq_len(ncol(mat)))]
