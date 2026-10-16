@@ -143,6 +143,8 @@ head(paste(missingLvls, collapse=", "), 3)))
 #' @importFrom rtracklayer path import
 #' @importFrom BiocParallel bpnworkers bplapply
 #' @importFrom pbapply pblapply
+#' @importFrom data.table fread
+#' @importFrom GenomicRanges seqnames start end
 #' @examples
 #' # generate dummy regions and save them to a temp file:
 #' frags <- tempfile(fileext = ".tsv")
@@ -217,15 +219,15 @@ The first few are:",
 
 .importTabixChunk <- function(x, which=NULL, useCLI=nzchar(Sys.which("tabix"))){
   x <- TabixFile(x)
+  d <- NULL
   if(useCLI){
     # streaming directly into fread avoids creating R strings, which is the
     # slowest step of scanTabix; this requires the `tabix` binary (htslib)
     if(is.null(which)){
       regs <- ""
     }else if(is(which, "GRanges")){
-      regs <- if(is.null(which)) "" else 
-        paste(shQuote(sprintf("%s:%d-%d", as.character(seqnames(which)),
-                              start(which), end(which))), collapse=" ")
+      regs <- paste(shQuote(sprintf("%s:%d-%d", as.character(seqnames(which)),
+                                    start(which), end(which))), collapse=" ")
     }else{
       regs <- paste(shQuote(which), collapse=" ")
     }
