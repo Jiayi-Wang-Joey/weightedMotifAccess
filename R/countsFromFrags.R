@@ -13,9 +13,13 @@
 #'   the names will be considered to represent the cell barcode, the values
 #'   to represent the pseudo-bulk sample in which to include the respective 
 #'   barcodes, and pseudo-bulk counts will be returned.
-#' @param insertions Logical; if \code{TRUE}, the ends of the fragments 
-#'   (insertions) are counted instead of the entire fragment. This means each 
-#'   fragment can contribute up to two counts. Default \code{FALSE}.
+#' @param insertions Whether to count insertion events rather than fragment
+#'   overlaps. If \code{TRUE}, the ends of the fragments are counted instead of
+#'   the entire fragment. This means each fragment can contribute up to two 
+#'   counts. \code{FALSE} means that a peak gets a count if the fragment 
+#'   overlaps it (even the ends of the fragment do not). `insertions="unique"`
+#'   counts the ends only, but prevent a fragment from contribution two counts
+#'   to the same peak (if both ends are within the peak).
 #' @param minFragLength Minimum fragment length to be considered. Default 1.
 #' @param maxFragLength Maximum fragment length to be considered. Default 5000.
 #' @param ... Passed to \code{\link{tabixChrApply}}.
@@ -56,6 +60,8 @@ peakCountsFromFrags <- function(fragfile, regions, barcodes = NULL,
                                 ignore.strand=TRUE, ...){
   
   stopifnot(is(regions, "GRanges"))
+  stopifnot(isTRUE(insertions) || isFALSE(insertions) ||
+              identical(insertions, "unique"))
   if(!is(fragfile, "TabixFile")){
     if(length(fragfile)>1)
       stop("Please pass a single filepath into `fragfile`.")
@@ -82,18 +88,22 @@ peakCountsFromFrags <- function(fragfile, regions, barcodes = NULL,
       toKeep <- intersect(toKeep, which(x$name %in% names(barcodes)))
       x <- x[toKeep]
       x$name <- factor(x$name, names(barcodes), as.character(barcodes))
-      factor(1:5, 1:10, c(rep(1:3,each=3),8))
       depth <- as.integer(table(x$name))
     }else{
       x <- x[toKeep]
     }
     wi <- wi[toKeep]
     
-    if (insertions) x <- .align2cuts(x)
-    
+    if(!isFALSE(insertions)){
+      x$fid <- seq_along(x)
+      x <- .align2cuts(x)
+    } 
+
     ov <- findOverlaps(regions, x, maxgap=maxgap, minoverlap=minoverlap,
                        ignore.strand=ignore.strand)
-    
+    if(insertions=="unique"){
+      ov <- ov[!duplicated(cbind(queryHits(ov), x$fid[subjectHits(ov)]))]
+    }
     co <- data.frame(i=queryHits(ov))
     if(!is.null(barcodes)){
       co$bc <- as.integer(x$name[subjectHits(ov)])
@@ -102,7 +112,11 @@ peakCountsFromFrags <- function(fragfile, regions, barcodes = NULL,
     }
     fl_vec <- rep(0L, length(regions))
     if(length(ov) > 0){
-      fl <- sum(splitAsList(wi[subjectHits(ov)],queryHits(ov)))
+      if(isFALSE(insertions)){
+        fl <- sum(splitAsList(wi[subjectHits(ov)],queryHits(ov)))
+      }else{
+        fl <- sum(splitAsList(wi[x$fid[subjectHits(ov)]],queryHits(ov)))
+      }
       fl_vec[unique(sort(queryHits(ov)))] <- fl
     }
     return(list(counts=co, fl=fl_vec, depth=depth))

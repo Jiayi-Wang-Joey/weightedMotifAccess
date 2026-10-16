@@ -31,9 +31,13 @@ the names will be considered to represent the cell barcode, the values
 to represent the pseudo-bulk sample in which to include the respective 
 barcodes, and pseudo-bulk counts will be returned.}
 
-\item{insertions}{Logical; if \code{TRUE}, the ends of the fragments 
-(insertions) are counted instead of the entire fragment. This means each 
-fragment can contribute up to two counts. Default \code{FALSE}.}
+\item{insertions}{Whether to count insertion events rather than fragment
+overlaps. If \code{TRUE}, the ends of the fragments are counted instead of
+the entire fragment. This means each fragment can contribute up to two 
+counts. \code{FALSE} means that a peak gets a count if the fragment 
+overlaps it (even the ends of the fragment do not). `insertions="unique"`
+counts the ends only, but prevent a fragment from contribution two counts
+to the same peak (if both ends are within the peak).}
 
 \item{minFragLength}{Minimum fragment length to be considered. Default 1.}
 
