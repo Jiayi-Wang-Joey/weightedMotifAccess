@@ -163,8 +163,7 @@ tabixChrApply <- function(x, fn, keepSeqLvls=NULL, exclude=NULL, only=NULL,
   if(!is.null(only)) stopifnot(is(only, "GRanges"))
   
   f2 <- function(sn, postfn, ...){
-    x <- rtracklayer::import(path(x), format="bed",
-                             which=GRanges(sn, IRanges(1,5*10^8)))
+    x <- .importTabixChunk(x, which=sn)
     if(!is.null(only)){
       .comparableStyles(x, only)
       x <- x[overlapsAny(x, only)]
@@ -214,4 +213,46 @@ The first few are:",
       stop("Unknown filetype.")))
   }
   seqlevelsStyle(x)
+}
+
+.importTabixChunk <- function(x, which=NULL, useCLI=nzchar(Sys.which("tabix"))){
+  x <- TabixFile(x)
+  if(useCLI){
+    # streaming directly into fread avoids creating R strings, which is the
+    # slowest step of scanTabix; this requires the `tabix` binary (htslib)
+    if(is.null(which)){
+      regs <- ""
+    }else if(is(which, "GRanges")){
+      regs <- if(is.null(which)) "" else 
+        paste(shQuote(sprintf("%s:%d-%d", as.character(seqnames(which)),
+                              start(which), end(which))), collapse=" ")
+    }else{
+      regs <- paste(shQuote(which), collapse=" ")
+    }
+    d <- tryCatch(
+      withCallingHandlers(
+        fread(cmd=paste("tabix", shQuote(path(x)), regs), sep="\t",
+              header=FALSE, showProgress=FALSE, fill=TRUE),
+        warning=function(w){
+          if(grepl("has size 0", conditionMessage(w)))
+            invokeRestart("muffleWarning")
+        }),
+      error=function(e) NULL)
+  }
+  if(is.null(d)){
+    # not a tabix file, or no tabix binary -> rtracklayer fallback
+    if(is.null(which)) return(rtracklayer::import(path(x), format="bed"))
+    if(!is(which, "GRanges")) which <- GRanges(which, IRanges(1,5*10^8))
+    return(rtracklayer::import(path(x), format="bed", which=which))
+  }
+  if(nrow(d)==0L){
+    gr <- GRanges()
+    gr$name <- character()
+    return(gr)
+  }
+  gr <- GRanges(as.factor(d[[1L]]), 
+                IRanges(as.integer(d[[2L]])+1L, as.integer(d[[3L]])))
+  if(ncol(d)>=4L) gr$name <- as.factor(d[[4L]])
+  if(ncol(d)>=5L) gr$score <- as.numeric(d[[5L]])
+  gr
 }
