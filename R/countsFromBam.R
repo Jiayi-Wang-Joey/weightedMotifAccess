@@ -6,8 +6,7 @@
 #' @param bam_files A vector of paths to the bam files.
 #' @param regions A `GRanges` of regions in which to counts.
 #' @param paired Logical; whether the data is paired (assumed unpaired by 
-#'   default). Use `paired="auto"` for automatic detection using the first bam 
-#'   file.
+#'   default).
 #' @param ignore.strand Logical; whether to ignore strand for the purpose of
 #'   counting overlaps (default TRUE).
 #' @param randomAcc Logical, whether to use random access. This is disabled by
@@ -87,12 +86,8 @@ peakCountsFromBAM <- function(
   type <- match.arg(type)
   stopifnot(extend>=0L)
   if(is.null(paired)){
-    if(verbose) message("`paired` not specified, assuming single-end reads. ",
-                        "Set to paired='auto' to automatically detect.")
+    if(verbose) message("`paired` not specified, assuming single-end reads. ")
     paired <- FALSE
-  }else if(paired=="auto"){
-    paired <- testPairedEndBam(head(bam_files[1]))
-    if(verbose) message("Detected ", ifelse(paired,"paired","unpaired")," data")
   }
   if(!paired && !(type %in% c("center","ends")) && verbose && extend!=0)
     message("`extend` argument ignored.")
@@ -137,7 +132,7 @@ peakCountsFromBAM <- function(
     if(verbose && bpnworkers(BPPARAM)==1)
       message("Reading file ",bamfile)
     res <- lapply(names(param), FUN=function(x){
-      r <- .bam2bwGetReads(bamfile, paired=paired, param=param[[x]], type=type,
+      r <- .bamGetReads(bamfile, paired=paired, param=param[[x]], type=type,
                           extend=extend, shift=shift, minFragL=minFragLength,
                           maxFragL=maxFragLength, strandMode=strandMode,
                           si=seqs)
@@ -196,4 +191,54 @@ peakCountsFromBAM <- function(
   se$total_depth <- total_depth
   se$depth <- depths
   se
+}
+
+# reads reads from bam file.
+.bamGetReads <- function(bamfile, paired, param, type="full", extend=0L,
+                            trim=c(0L,0L), shift=0L, minFragL=0, maxFragL=Inf,
+                            forceStyle=NULL, si=NULL, only=NULL, exclude=NULL,
+                            strandMode=0){
+  if(paired){
+    bamfile <- .initPairedBam(bamfile)
+    bam <- readGAlignmentPairs(bamfile, param=param, strandMode=strandMode)
+    bam <- as(bam[isProperPair(bam)], "GRanges")
+    ls <- length(bam)
+    bam <- bam[width(bam)>=minFragL & width(bam)<=maxFragL]
+  }else{
+    bam <- as(readGAlignments(bamfile, param=param), "GRanges")
+    ls <- length(bam)
+  }
+  bam <- .doTrim(bam, trim=trim)
+  if(!paired && type %in% c("full","center") && extend!=0L){
+      bam <- .safeGRresize(bam,width(bam)+as.integer(extend),use.names=FALSE)
+  }
+  if(!is.null(forceStyle)) seqlevelsStyle(bam) <- forceStyle
+  if(!is.null(only) && is(only,"GRanges")){
+    .comparableStyles(bam, only)
+    bam <- bam[overlapsAny(bam,only)]
+  }
+  if(!is.null(exclude) && is(exclude,"GRanges")){
+    .comparableStyles(bam, exclude)
+    bam <- bam[!overlapsAny(bam,exclude)]
+  }
+  bam <- .doShift(bam, shift)
+  if(type=="ends"){
+    bam <- .align2cuts(bam)
+    if(extend!=0L) bam <- .safeGRresize(bam, as.integer(extend),
+                                                       use.names=FALSE)
+  }else if(type=="center" && paired){
+    bam <- .safeGRresize(bam, max(1L,extend), fix="center", use.names=FALSE)
+  }else if(type!="full"){
+    bam <- .safeGRresize(bam, width=1L, fix=type, use.names=FALSE)
+  }
+  if(!is.null(si)){
+    # for trimming, to avoid out-of-range warnings
+    bam <- keepSeqlevels(bam, names(si), pruning.mode="coarse")
+    if(is.vector(si)) si <- Seqinfo(names(si), as.integer(si))
+    seqinfo(bam) <- si
+  }
+  bam <- trim(bam)
+  bam <- bam[width(bam)>0]
+  metadata(bam)$reads <- ls
+  bam
 }

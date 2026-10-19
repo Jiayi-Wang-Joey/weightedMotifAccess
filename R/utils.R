@@ -698,3 +698,21 @@ views2Matrix <- function(v, padVal=NA_integer_){
   x <- Reduce(c, lapply(v[lengths(v)>0], padVal=padVal, FUN=.view2paddedAL))
   matrix(unlist(x), byrow=TRUE, ncol=ws)
 }
+
+
+.checkMissingSeqLevels <- function(x, seqlvls, fatal=TRUE,
+                                   argName="keepSeqLvls"){
+  if(!is.vector(x)) x <- seqlevels(x)
+  if(is.integer(x)) x <- names(x)
+  if(is.null(seqlvls)) return(invisible(x))
+  x <- intersect(x, seqlvls)
+  if(length(x)==0) stop("No seqLevel retained!")
+  if(length(missingLvls <- setdiff(seqlvls, x))==0) return(invisible(x))
+  msg <- paste0(
+    "Some of the seqLevels specified by `", argName, "` are not in the data.
+The first few are:",
+head(paste(missingLvls, collapse=", "), 3))
+  if(fatal) stop(msg)
+  warning(msg)
+  invisible(x)
+}

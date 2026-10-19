@@ -35,8 +35,7 @@ peakCountsFromBAM(
 \item{regions}{A `GRanges` of regions in which to counts.}
 
 \item{paired}{Logical; whether the data is paired (assumed unpaired by 
-default). Use `paired="auto"` for automatic detection using the first bam 
-file.}
+default).}
 
 \item{extend}{The amount *by* which to extend single-end reads (e.g. 
 fragment length minus read length). If `paired=TRUE` and `type` is either
